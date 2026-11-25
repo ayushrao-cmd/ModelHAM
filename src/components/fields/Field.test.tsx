@@ -6,6 +6,7 @@ import { fmt } from '../../lib/format'
 import { getAt } from '../../lib/path'
 import { useStore } from '../../state/store'
 import { useModel } from '../../state/useModel'
+import { InputGroup } from '../InputGroup'
 import { Field } from './Field'
 
 // jsdom has no ResizeObserver; Radix Slider measures its thumb with one.
@@ -51,6 +52,32 @@ describe('Field', () => {
     expect(active('deal.bidPrice')).toBe(2250)
     expect(input.value).toBe('2,250')
     expect(screen.queryByText('Changed from base')).toBeNull()
+  })
+
+  it('on the base scenario itself, compares with and resets to the default', () => {
+    vi.useFakeTimers()
+    mount('deal.bidPrice')
+    const input = screen.getByLabelText('Bid Price') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '2400' } })
+    fireEvent.blur(input)
+    expect(active('deal.bidPrice')).toBe(2400)
+    expect(screen.getByText('Changed from base')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /reset bid price/i }))
+    expect(active('deal.bidPrice')).toBe(2250)
+    expect(screen.queryByText('Changed from base')).toBeNull()
+  })
+
+  it('opens help from the keyboard', async () => {
+    mount('deal.bidPrice')
+    const help = screen.getByRole('button', { name: 'Help: Bid Price' })
+    act(() => help.focus())
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toMatch(/Quoted project price/))
+  })
+
+  it('does not repeat a list label that equals its group heading, but keeps it as the accessible name', () => {
+    render(<TooltipProvider><InputGroup section="build" group="Build Milestones" /></TooltipProvider>)
+    expect(screen.getAllByText('Build Milestones', { exact: true }).filter(el => !el.closest('.sr-only'))).toHaveLength(1)
+    expect(screen.getByRole('group', { name: 'Build Milestones' })).toBeTruthy()
   })
 
   it('reads percent input as percent points', () => {

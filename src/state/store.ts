@@ -68,6 +68,12 @@ function rehydrate(raw: unknown): Persisted {
   return { scenarios, baseId, activeId: has(raw.activeId) ? raw.activeId : baseId, compareId: has(raw.compareId) ? raw.compareId : null }
 }
 
+/** What "changed" and "reset" compare against: the base scenario, or the defaults while editing the base itself. */
+export function referenceInputs(s: Pick<Store, 'scenarios' | 'activeId' | 'baseId'>): Inputs {
+  if (s.activeId === s.baseId) return DEFAULT_INPUTS
+  return (s.scenarios.find(x => x.id === s.baseId) ?? s.scenarios[0]).inputs
+}
+
 export const useStore = create<Store>()(persist((set, get) => {
   const byId = (id: string) => get().scenarios.find(s => s.id === id)
   const patch = (id: string, f: (s: Scenario) => Scenario) =>
@@ -80,10 +86,7 @@ export const useStore = create<Store>()(persist((set, get) => {
   return {
     ...initial(),
     setInput: (fieldId, value) => patch(get().activeId, s => ({ ...s, inputs: setAt(s.inputs, fieldId, value) })),
-    resetField: fieldId => {
-      const base = byId(get().baseId)
-      if (base) get().setInput(fieldId, structuredClone(getAt(base.inputs, fieldId)))
-    },
+    resetField: fieldId => get().setInput(fieldId, structuredClone(getAt(referenceInputs(get()), fieldId))),
     createScenario: (name, from) => add(name, structuredClone((byId(from ?? get().activeId) ?? byId(get().baseId)!).inputs)),
     renameScenario: (id, name) => { if (name.trim()) patch(id, s => ({ ...s, name: name.trim() })) },
     deleteScenario: id => set(st => {

@@ -123,6 +123,20 @@ describe('store', () => {
     expect(st().scenarios.find(s => s.id === id)!.inputs.deal.bidPrice).toBe(DEFAULT_INPUTS.deal.bidPrice)
   })
 
+  it('resetField uses the base value, or the default when editing the base scenario itself', async () => {
+    const { useStore } = await fresh()
+    const st = useStore.getState
+    st().setInput('deal.bidPrice', 2100) // editing the base scenario
+    st().resetField('deal.bidPrice')
+    expect(st().scenarios.find(s => s.id === st().baseId)!.inputs.deal.bidPrice).toBe(DEFAULT_INPUTS.deal.bidPrice)
+    st().setInput('deal.bidPrice', 2100)
+    const id = st().createScenario('Copy') // copy starts at 2100; the base is now 2100
+    st().setActive(id)
+    st().setInput('deal.bidPrice', 1900)
+    st().resetField('deal.bidPrice')
+    expect(st().scenarios.find(s => s.id === id)!.inputs.deal.bidPrice).toBe(2100)
+  })
+
   it('creates from the active scenario, renames, compares and deletes', async () => {
     const { useStore } = await fresh()
     const st = useStore.getState

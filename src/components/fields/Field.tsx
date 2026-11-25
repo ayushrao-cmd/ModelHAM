@@ -12,7 +12,7 @@ import type { FieldDef } from '../../engine/types'
 import { fieldById } from '../../fields'
 import { fmt } from '../../lib/format'
 import { getAt } from '../../lib/path'
-import { useStore } from '../../state/store'
+import { referenceInputs, useStore } from '../../state/store'
 import { useModel } from '../../state/useModel'
 import { NumberField } from './NumberField'
 import { formatNumber } from './parse'
@@ -73,9 +73,10 @@ function DateField({ id, value, onCommit, ...aria }: { id: string; value: string
 }
 
 /** Renders any FieldDef by kind, with help, changed-vs-base reset, key-lever slider and check messages. */
-export function Field({ id, className }: { id: string; className?: string }) {
+/** `labelHidden`: the visible label repeats the card heading; it stays as the accessible name. */
+export function Field({ id, className, labelHidden }: { id: string; className?: string; labelHidden?: boolean }) {
   const value = useStore(s => getAt((s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0]).inputs, id))
-  const baseValue = useStore(s => getAt((s.scenarios.find(x => x.id === s.baseId) ?? s.scenarios[0]).inputs, id))
+  const baseValue = useStore(s => getAt(referenceInputs(s), id))
   const setInput = useStore(s => s.setInput)
   const resetField = useStore(s => s.resetField)
   const { checks } = useModel()
@@ -130,12 +131,15 @@ export function Field({ id, className }: { id: string; className?: string }) {
     <div ref={root} data-field={id} className={cn('min-w-0 rounded-md', className)}
       onAnimationEnd={e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('field-flash') }}>
       <div className="flex min-h-7 items-center gap-1.5">
-        <Label {...labelProps} className="min-w-0 text-sm font-medium leading-5">{def.label}</Label>
+        <Label {...labelProps} className={cn('min-w-0 text-sm font-medium leading-5', labelHidden && 'sr-only')}>{def.label}</Label>
         {def.help && (
           <Tooltip>
             <TooltipTrigger asChild>
-              {/* Hover hint only; the same text reaches assistive tech through aria-describedby. */}
-              <span className="shrink-0 text-muted-foreground" aria-hidden="true"><Info className="size-3.5" /></span>
+              {/* Focusable, so the tooltip opens on keyboard focus as well as hover. */}
+              <button type="button" aria-label={`Help: ${def.label}`}
+                className="-m-1 shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground">
+                <Info className="size-3.5" aria-hidden="true" />
+              </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-64 bg-foreground text-background">{def.help}</TooltipContent>
           </Tooltip>
