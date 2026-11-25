@@ -25,4 +25,6 @@ export interface Inputs {
 }
 export interface FieldDef { id: string; label: string; section: SectionId;
   group: string; kind: 'money'|'percent'|'days'|'years'|'number'|'date'|'text'|'select'|'percentList'|'milestoneList'|'trancheList'; min?: number; max?: number;
-  step?: number; help?: string; options?: { value: string; label: string }[]; key?: boolean; readOnly?: boolean }
+  step?: number; help?: string; options?: { value: string; label: string }[]; key?: boolean; readOnly?: boolean
+  /** Pre-filled in a blank project: an HAM concession standard (MCA) or a statutory/policy value. Unset = project data, starts empty. */
+  prefill?: 'standard' | 'policy' }

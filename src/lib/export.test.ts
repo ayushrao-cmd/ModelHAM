@@ -31,8 +31,8 @@ describe('toCsv', () => {
 describe('exportScenarioJson', () => {
   it('round-trips through importScenario to equal inputs and name', () => {
     const inputs = setAt(setAt(DEFAULT_INPUTS, 'deal.bidPrice', 2345.67), 'capital.repayment.0', 0.05)
-    const json = exportScenarioJson({ id: 'x', name: 'Stretch', inputs, updatedAt: 0 })
-    expect(JSON.parse(json)).toEqual({ name: 'Stretch', inputs })
+    const json = exportScenarioJson({ id: 'x', name: 'Stretch', inputs, updatedAt: 0, empty: [] })
+    expect(JSON.parse(json)).toEqual({ name: 'Stretch', inputs, empty: [] })
     expect(useStore.getState().importScenario(json)).toEqual({ ok: true })
     const s = useStore.getState().scenarios.find(x => x.id === useStore.getState().activeId)!
     expect(s.name).toBe('Stretch')

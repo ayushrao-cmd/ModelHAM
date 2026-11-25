@@ -10,8 +10,8 @@ export type Cell = string | number
 const cell = (v: Cell) => (typeof v === 'number' ? String(Number(v.toFixed(6))) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 export const toCsv = (header: string[], rows: Cell[][]) => [header, ...rows].map(r => r.map(cell).join(',')).join('\n')
 
-/** The shape importScenario accepts back. */
-export const exportScenarioJson = (s: Scenario): string => JSON.stringify({ name: s.name, inputs: s.inputs }, null, 2)
+/** The shape importScenario accepts back; `empty` lists the values not filled in yet. */
+export const exportScenarioJson = (s: Scenario): string => JSON.stringify({ name: s.name, inputs: s.inputs, empty: s.empty }, null, 2)
 
 const BUILD: (keyof BuildMonth)[] = ['epc', 'otherUses', 'gstPaid', 'idc', 'supportReceived', 'supportGst', 'equityDraw', 'debtDraw',
   'debtBalance', 'cumPhysical', 'cumCost', 'cumFunding']

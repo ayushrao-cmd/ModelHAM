@@ -134,7 +134,7 @@ describe('store', () => {
     const { useStore } = await fresh()
     useStore.getState().setInput('deal.bidPrice', 2345)
     useStore.getState().setInput('capital.repayment.0', 0.02)
-    const saved = JSON.parse(cookies.get(KEY)!).state.scenarios[0].inputs
+    const saved = JSON.parse(cookies.get(KEY)!).state.projects[0].scenarios[0].inputs
     expect(saved).toEqual({ deal: { bidPrice: 2345 }, capital: { repayment: [0.02, ...DEFAULT_INPUTS.capital.repayment.slice(1)] } })
   })
 
@@ -147,7 +147,7 @@ describe('store', () => {
     const { useStore } = await fresh()
     expect(useStore.getState().scenarios[0].inputs.deal.bidPrice).toBe(2111)
     useStore.getState().setInput('deal.lengthKm', 40)
-    expect(JSON.parse(cookies.get(KEY)!).state.scenarios[0].inputs.deal).toEqual({ bidPrice: 2111, lengthKm: 40 })
+    expect(JSON.parse(cookies.get(KEY)!).state.projects[0].scenarios[0].inputs.deal).toEqual({ bidPrice: 2111, lengthKm: 40 })
     expect(localStorage.getItem(KEY)).toBeNull()
   })
 
