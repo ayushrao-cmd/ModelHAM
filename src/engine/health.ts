@@ -13,7 +13,8 @@ export interface Check { id: string; title: string; section: SectionId; fieldId?
 const SUM_TOL = 1e-6 // schedules must total 100% to within float residue
 const MONEY_TOL = 0.005 // ₹ Cr; below this an amount displays as ₹0.00 Cr
 const RECON_TOL = 0.01 // ₹ Cr; the debt / Interest During Build fixed point converges to this
-const RATIO_TOL = 1e-9 // float residue on leverage (defaults sit exactly at 3.0×)
+const RATIO_TOL = 1e-9 // float residue on DSCR comparisons
+const IRR_TOL = 1e-6 // XIRR converges to about this
 export const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
 const TIEUP_SHARE = 0.9 // financing tie-up: 90% of (Authority Estimate − Construction Support)
 const APS_FREE_PTS = 10 // no Additional Performance Security up to 10 points below the estimate
@@ -138,8 +139,9 @@ export function runChecks(r: ModelResult): Check[] {
   const bid = i.deal.bidPrice
   const threshold = Math.min(TIEUP_SHARE * (i.deal.authorityEstimate - i.support.pctOfBid * bid), i.income.completionPctOfBid * bid)
   const tied = b.debt + b.equity
-  out.push(check('financing-tieup', 'Financing Tie-up Test', 'deal', 'error', tied >= threshold,
-    `Debt + equity ${fmt.cr(tied)} ${tied >= threshold ? 'meets' : 'is below'} the tie-up threshold ${fmt.cr(threshold)}.`, 'deal.bidPrice'))
+  const tiedOk = tied >= threshold - RECON_TOL // debt and equity are exact only to the solver tolerance
+  out.push(check('financing-tieup', 'Financing Tie-up Test', 'deal', 'error', tiedOk,
+    `Debt + equity ${fmt.cr(tied)} ${tiedOk ? 'meets' : 'is below'} the tie-up threshold ${fmt.cr(threshold)}.`, 'deal.bidPrice'))
 
   // An empty build grid (completion before start, or an unusable date) fails here; the milestone checks need months.
   const months = b.months
@@ -170,14 +172,14 @@ export function runChecks(r: ModelResult): Check[] {
   // Coverage. Comparisons are written so NaN fails.
   const worst = ops.find(p => p.dscr === k.dscrMin)
   const when = worst ? ` (period ${worst.n}, ${fmt.date(worst.day)})` : ''
-  const floorOk = k.dscrMin == null || k.dscrMin >= DSCR_FLOOR
+  const floorOk = k.dscrMin == null || k.dscrMin >= DSCR_FLOOR - RATIO_TOL
   out.push(check('dscr-floor', `DSCR at least ${fmt.x(DSCR_FLOOR)}`, 'capital', 'error', floorOk,
     k.dscrMin == null ? 'No debt service, so no coverage test.'
       : floorOk ? `Minimum DSCR ${fmt.x(k.dscrMin)}${when} is at least ${fmt.x(DSCR_FLOOR)}.`
       : k.dscrMin < 0 ? `Minimum DSCR ${fmt.x(k.dscrMin)}${when}: cash flow is negative, so it doesn't cover debt service at all.`
       : `Minimum DSCR ${fmt.x(k.dscrMin)}${when} is below ${fmt.x(DSCR_FLOOR)}: cash flow doesn't cover debt service.`,
     'capital.repayment'))
-  const warnOk = k.dscrMin == null || k.dscrMin >= i.capital.dscrWarn
+  const warnOk = k.dscrMin == null || k.dscrMin >= i.capital.dscrWarn - RATIO_TOL
   out.push(check('dscr-warn', 'DSCR above warning level', 'capital', 'warning', warnOk,
     k.dscrMin == null ? 'No debt service, so no coverage test.'
       : `Minimum DSCR ${fmt.x(k.dscrMin)}${when} is ${warnOk ? 'at or above' : 'below'} the warning level ${fmt.x(i.capital.dscrWarn)}.`,
@@ -190,15 +192,19 @@ export function runChecks(r: ModelResult): Check[] {
       : `${fmt.cr(left)} of debt is still outstanding after the final payment${last ? ` (${fmt.date(last.day)})` : ''}.`,
     'capital.repayment'))
 
-  out.push(check('leverage', 'Leverage within limit', 'capital', 'warning', k.leverage <= i.capital.maxLeverage + RATIO_TOL,
-    `Debt / equity ${fmt.x(k.leverage)} is ${k.leverage <= i.capital.maxLeverage + RATIO_TOL ? 'within' : 'above'} the ${fmt.x(i.capital.maxLeverage)} limit.`,
+  // Money tolerance: the debt/equity split is exact only to the solver's ₹0.01 Cr (defaults sit at 3.0×).
+  const levOk = b.debt <= i.capital.maxLeverage * b.equity + RECON_TOL
+  out.push(check('leverage', 'Leverage within limit', 'capital', 'warning', levOk,
+    `Debt / equity ${fmt.x(k.leverage)} is ${levOk ? 'within' : 'above'} the ${fmt.x(i.capital.maxLeverage)} limit.`,
     'capital.equityPct'))
 
   // Sources = Uses, reconciled independently: reported totals, the monthly draws behind debt and equity, and
   // the monthly cash (funding vs cost by completion). Negative debt/equity means Construction Support exceeds costs.
   const sources = b.support + b.supportGst + b.debt + b.equity
-  const negative = !(b.debt >= 0 && b.equity >= 0)
-  const negMsg = `Debt ${fmt.cr(b.debt)} and equity ${fmt.cr(b.equity)} must not be negative: Construction Support exceeds build costs.`
+  // Draws are never negative, so the sign test is on the funding need itself.
+  const need = b.totalUses - b.support - b.supportGst
+  const negative = need < 0
+  const negMsg = `Construction Support incl. GST ${fmt.cr(b.support + b.supportGst)} exceeds build costs ${fmt.cr(b.totalUses)} by ${fmt.cr(-need)}: there is nothing for debt and equity to fund.`
   const end = months[months.length - 1]
   const recon: [string, number, number][] = [
     ['Monthly equity draws', sum(months.map(m => m.equityDraw)), b.equity],
@@ -232,10 +238,18 @@ export function runChecks(r: ModelResult): Check[] {
       : "Returns can't be computed with these inputs: the cash flows never turn positive enough to give an IRR."))
 
   const hurdle = i.targets.equityIrrHurdle
-  out.push(check('equity-hurdle', 'Equity IRR vs hurdle', 'returns', 'info', k.equityIrr != null && k.equityIrr >= hurdle,
+  const hurdleOk = k.equityIrr != null && k.equityIrr >= hurdle - IRR_TOL
+  out.push(check('equity-hurdle', 'Equity IRR vs hurdle', 'returns', 'info', hurdleOk,
     k.equityIrr == null ? `Equity IRR can't be computed, so it can't be compared with the ${fmt.pct(hurdle)} hurdle.`
-      : `Equity IRR ${fmt.pct(k.equityIrr)} is ${k.equityIrr >= hurdle ? 'at or above' : 'below'} the ${fmt.pct(hurdle)} hurdle.`,
+      : `Equity IRR ${fmt.pct(k.equityIrr)} is ${hurdleOk ? 'at or above' : 'below'} the ${fmt.pct(hurdle)} hurdle.`,
     'targets.equityIrrHurdle'))
+
+  // GST credit is recovered from Completion Payments; a low bid can leave some unrecovered at concession end.
+  const recovered = sum(ops.map(p => p.gstRecovery)), gstLeft = b.netGstCredit - recovered
+  out.push(check('gst-recovered', 'GST credit recovered', 'income', 'warning', gstLeft <= MONEY_TOL,
+    gstLeft <= MONEY_TOL ? `All ${fmt.cr(b.netGstCredit)} of net GST credit is recovered from Completion Payments by the final payment.`
+      : `${fmt.cr(gstLeft)} of net GST credit is still unrecovered after the final payment (recovered ${fmt.cr(recovered)} of ${fmt.cr(b.netGstCredit)}); it stays a receivable at concession end.`,
+    'deal.bidPrice'))
 
   out.push(...statementChecks(buildStatements(r)))
   return out

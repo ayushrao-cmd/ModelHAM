@@ -2,6 +2,7 @@
 import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import type { SectionId } from '../engine/types'
+import { FIELDS } from '../fields'
 
 export const SECTION_IDS: SectionId[] = ['overview', 'deal', 'build', 'phasing', 'capital', 'income', 'operations', 'returns', 'statements', 'health', 'scenarios']
 
@@ -10,7 +11,10 @@ export function parseHash(hash: string): { section: SectionId; focus?: string } 
   const section = SECTION_IDS.find(s => s === path)
   if (!section) return { section: 'overview' } // unknown section: its focus target cannot be on overview either
   const focus = new URLSearchParams(query).get('focus') ?? undefined
-  return focus ? { section, focus } : { section }
+  if (!focus) return { section }
+  // A field lives in one section; old bookmarks (e.g. #/build?focus=build.phasing) follow it to its section.
+  const owner = FIELDS.find(f => focus === f.id || focus.startsWith(`${f.id}.`))
+  return { section: owner?.section ?? section, focus }
 }
 
 export const hrefFor = (section: SectionId, focus?: string) => `#/${section}${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`

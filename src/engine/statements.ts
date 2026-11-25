@@ -147,7 +147,7 @@ export function buildStatements(r: ModelResult): Statements {
       L('debtIn', 'Senior debt drawn', debtIn),
       L('principal', 'Principal repaid', principal),
       L('interestPaid', 'Interest paid', interestPaid),
-      L('distributions', 'Distributions to equity', distributions),
+      L('distributions', 'Distributions to equity / (top-ups)', distributions),
       L('cff', 'Net cash from financing activities', cff, 'subtotal'),
       L('netChange', 'Net change in cash', netChange, 'total'),
       L('openingCash', 'Opening cash', openingCash),

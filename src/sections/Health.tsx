@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { CheckIcon, RANK, status } from '../app/CommandPalette'
-import { go, useRoute } from '../app/router'
+import { go, hashParam, useRoute } from '../app/router'
 import { SECTIONS } from '../app/sections'
 import type { Check } from '../engine/health'
 import { fieldById } from '../fields'
@@ -111,6 +111,12 @@ export function Health() {
   const routeSection = withChecks.some(s => s.id === fromHash) ? fromHash! : 'all'
   const [section, setSection] = useState(routeSection)
   useEffect(() => setSection(routeSection), [routeSection]) // a later deep link wins
+  // Any navigation re-reads the filter, so the plain section link (no ?section=) shows all sections again.
+  useEffect(() => {
+    const sync = () => { const s = hashParam(window.location.hash, 'section'); setSection(SECTIONS.some(x => x.id === s) ? s! : 'all') }
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
   const [filter, setFilter] = useState<Filter>('all')
 
   const pickSection = (v: string) => {

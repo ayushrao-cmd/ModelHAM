@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { useRoute } from '../app/router'
+import { hashParam } from '../app/router'
 import { fyData } from '../charts/data'
 import { type Series, StatementChart } from '../charts/StatementChart'
 import { SERIES } from '../charts/theme'
@@ -16,9 +16,10 @@ import { Panel, SectionHeader, Stats } from './SectionLayout'
 
 type Tab = 'is' | 'bs' | 'cf'
 const TABS: Record<Tab, string> = { is: 'Income Statement', bs: 'Balance Sheet', cf: 'Cash Flow' }
-const isTab = (v: string | null): v is Tab => v != null && v in TABS
+const isTab = (v: string | null): v is Tab => v != null && Object.prototype.hasOwnProperty.call(TABS, v) // Object.hasOwn needs ES2022 lib
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const TIE = 0.01 // ₹ Cr, as the Health statement checks
+const tabOf = (): Tab => { const t = hashParam(window.location.hash, 'tab'); return isTab(t) ? t : 'is' }
 
 /** One-line result of a statement identity. */
 function Banner({ pass, children }: { pass: boolean; children: ReactNode }) {
@@ -93,18 +94,21 @@ function StatementsBody({ tab, onTab }: { tab: Tab; onTab(t: Tab): void }) {
     <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
       Simplified project accounts for evaluating the bid: not IGAAP or IndAS statements, and not certified. Build costs, including
       Interest During Build, are capitalised and amortised straight-line over the payment periods. Tax is current tax only; no
-      deferred tax is recognised. Distributions pass Completion Payment cash to equity, so in early years they can exceed accounting
-      profit and retained earnings turn negative.
+      deferred tax is recognised. Income and costs fall in the financial year of their payment date, with no accruals at 31 March.
+      Distributions pass Completion Payment cash to equity, so in early years they can exceed accounting profit and retained
+      earnings turn negative.
     </p>
   </>
 }
 
 export function Statements() {
-  const { param } = useRoute()
-  const fromHash = param('tab')
-  const routeTab: Tab = isTab(fromHash) ? fromHash : 'is'
-  const [tab, setTab] = useState<Tab>(routeTab)
-  useEffect(() => setTab(routeTab), [routeTab]) // a later deep link wins
+  const [tab, setTab] = useState<Tab>(tabOf)
+  // Every navigation re-reads the tab, so the section link (no ?tab=) returns to the Income Statement.
+  useEffect(() => {
+    const sync = () => setTab(tabOf())
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
   const pick = (t: Tab) => {
     setTab(t)
     history.replaceState(null, '', `#/statements?tab=${t}`) // shareable without a hashchange (which would refocus the heading)

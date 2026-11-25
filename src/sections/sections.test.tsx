@@ -70,6 +70,23 @@ describe('sections', () => {
     expect(screen.getByText(/^Closing cash equals balance-sheet cash/)).toBeTruthy()
   })
 
+  it('a section link without ?tab= returns statements to the Income Statement', () => {
+    window.location.hash = '#/statements'
+    wrap(<Statements />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Cash Flow' }))
+    expect(window.location.hash).toBe('#/statements?tab=cf')
+    act(() => { window.location.hash = '#/statements'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    expect(screen.getByRole('tab', { name: 'Income Statement' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('statement line groups are row groups with their heading', () => {
+    window.location.hash = '#/statements?tab=bs'
+    wrap(<Statements />)
+    const groups = screen.getAllByRole('rowgroup').filter(g => g.tagName === 'TBODY')
+    expect(groups.length).toBe(3)
+    expect(screen.getByRole('rowheader', { name: 'Liabilities' }).getAttribute('scope')).toBe('rowgroup')
+  })
+
   it('statements show negatives in parentheses', () => {
     wrap(<Statements />)
     const is = screen.getByRole('region', { name: 'Income statement' })

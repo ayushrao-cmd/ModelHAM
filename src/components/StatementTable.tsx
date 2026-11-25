@@ -25,6 +25,11 @@ export function StatementTable({ title, years, rows, mark }: { title: string; ye
     if (ok) toast.success(`Copied ${title} as CSV`)
     else toast.error('Copy failed: your browser blocked clipboard access.')
   }
+  const groups: { heading?: Row; rows: Row[] }[] = []
+  for (const r of rows) {
+    if (r.style === 'heading' || !groups.length) groups.push(r.style === 'heading' ? { heading: r, rows: [] } : { rows: [r] })
+    else groups[groups.length - 1].rows.push(r)
+  }
   const marked = (k: number) => mark?.index === k && 'bg-primary/[0.06]'
   return (
     <div className="min-w-0">
@@ -52,29 +57,32 @@ export function StatementTable({ title, years, rows, mark }: { title: string; ye
               ))}
             </tr>
           </thead>
-          <tbody>
-            {rows.map(r => {
-              if (r.style === 'heading') return (
-                <tr key={r.key}>
-                  <th scope="rowgroup" colSpan={1} className="sticky left-0 bg-card pb-1 pr-3 pt-4 text-left text-xs font-semibold text-foreground">{r.label}</th>
+          {groups.map((g, n) => (
+            // Each heading opens its own row group, so assistive tech announces "Liabilities" for its lines.
+            <tbody key={g.heading?.key ?? n}>
+              {g.heading && (
+                <tr>
+                  <th scope="rowgroup" className="sticky left-0 bg-card pb-1 pr-3 pt-4 text-left text-xs font-semibold text-foreground">{g.heading.label}</th>
                   {years.map((y, k) => <td key={y} className={cn('pt-4', marked(k))} />)}
                 </tr>
-              )
-              const strong = r.style === 'subtotal' || r.style === 'total'
-              const rule = cn(strong && 'border-t border-foreground/25', r.style === 'total' && 'border-b-[3px] border-double border-b-foreground/40',
-                r.key === 'check' && 'text-muted-foreground')
-              return (
-                <tr key={r.key} className={cn('hover:[&>*]:bg-muted', strong && 'font-semibold')}>
-                  <th scope="row" className={cn('sticky left-0 min-w-[8.5rem] max-w-[16rem] bg-card py-1.5 pr-3 text-left leading-5 sm:min-w-[15rem]', strong ? 'font-semibold' : 'font-normal', rule)}>
-                    {r.label}
-                  </th>
-                  {r.values.map((v, k) => (
-                    <td key={k} className={cn('whitespace-nowrap px-3 py-1.5 text-right last:pr-1', rule, marked(k))}>{acct(v)}</td>
-                  ))}
-                </tr>
-              )
-            })}
-          </tbody>
+              )}
+              {g.rows.map(r => {
+                const strong = r.style === 'subtotal' || r.style === 'total'
+                const rule = cn(strong && 'border-t border-foreground/25', r.style === 'total' && 'border-b-[3px] border-double border-b-foreground/40',
+                  r.key === 'check' && 'text-muted-foreground')
+                return (
+                  <tr key={r.key} className={cn('hover:[&>*]:bg-muted', strong && 'font-semibold')}>
+                    <th scope="row" className={cn('sticky left-0 min-w-[8.5rem] max-w-[16rem] bg-card py-1.5 pr-3 text-left leading-5 sm:min-w-[15rem]', strong ? 'font-semibold' : 'font-normal', rule)}>
+                      {r.label}
+                    </th>
+                    {r.values.map((v, k) => (
+                      <td key={k} className={cn('whitespace-nowrap px-3 py-1.5 text-right last:pr-1', rule, marked(k))}>{acct(v)}</td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          ))}
         </table>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { buildStatements, row } from './statements'
 import type { Inputs } from './types'
 import { fieldById } from '../fields'
 import { setAt } from '../lib/path'
+import { fmt } from '../lib/format'
 
 const checks = (i: Inputs) => runChecks(runModel(i))
 const find = (cs: Check[], id: string) => {
@@ -24,7 +25,7 @@ describe('health at defaults', () => {
     const ids = ['financing-tieup', ...[1, 2, 3, 4].flatMap(k => [`milestone-progress-${k}`, `milestone-funding-${k}`]),
       'dscr-floor', 'dscr-warn', 'debt-repaid', 'repayment-sum', 'installment-sum', 'tranche-sum', 'rate-quote-fresh',
       'aps-trigger', 'leverage', 'sources-uses', 'build-cash', 'om-margin', 'solver-converged', 'equity-hurdle',
-      'resurfacing-order', 'dates-order', 'irr-undefined', 'field:deal.buildDays', 'bs-balance', 'cf-reconcile']
+      'resurfacing-order', 'dates-order', 'irr-undefined', 'field:deal.buildDays', 'bs-balance', 'cf-reconcile', 'gst-recovered']
     for (const id of ids) expect(cs.map(c => c.id), id).toContain(id)
     expect(new Set(cs.map(c => c.id)).size).toBe(cs.length)
   })
@@ -179,12 +180,22 @@ describe('model checks that can fail', () => {
     expect(c).toMatchObject({ pass: false, severity: 'error' })
     expect(c.message).toContain('20.00%')
   })
-  it('negative debt or equity fails sources-uses and build-cash', () => {
+  it('reported debt and equity that do not match the draws fail sources-uses', () => {
     const r = runModel(D)
-    const bad = { ...r, build: { ...r.build, debt: -10, equity: -3 } }
-    const cs = runChecks(bad)
+    const cs = runChecks({ ...r, build: { ...r.build, debt: r.build.debt - 10 } })
     expect(find(cs, 'sources-uses').pass).toBe(false)
-    expect(find(cs, 'build-cash').pass).toBe(false)
+    expect(find(cs, 'sources-uses').message).toContain('Monthly debt draws')
+  })
+  it('Construction Support above build costs (bid 8,000) fails sources-uses and build-cash, quoting the excess', () => {
+    const r = runModel(setAt(D, 'deal.bidPrice', 8000)), b = r.build
+    const excess = b.support + b.supportGst - b.totalUses
+    expect(excess).toBeGreaterThan(1000)
+    const cs = runChecks(r)
+    for (const id of ['sources-uses', 'build-cash']) {
+      const c = find(cs, id)
+      expect(c.pass, id).toBe(false)
+      expect(c.message).toContain(`exceeds build costs ${fmt.cr(b.totalUses)} by ${fmt.cr(excess)}`)
+    }
   })
   it('solver-converged fails when the fixed point did not converge', () => {
     const r = runModel(D)
@@ -246,6 +257,34 @@ describe('no build months', () => {
   })
 })
 
+
+describe('float edges and recovery', () => {
+  it('at defaults only the two known warnings fail (leverage sits at 3.0x to within the solver tolerance)', () => {
+    expect(failing(checks(D)).map(c => c.id).sort()).toEqual(['milestone-funding-2', 'om-margin'])
+  })
+  it('money and ratio comparisons tolerate solver and float residue, but not real misses', () => {
+    const r = runModel(D), b = r.build
+    const tie = (tied: number) => find(runChecks({ ...r, build: { ...b, debt: tied - b.equity } }), 'financing-tieup').pass
+    const threshold = Math.min(0.9 * (D.deal.authorityEstimate - D.support.pctOfBid * D.deal.bidPrice), D.income.completionPctOfBid * D.deal.bidPrice)
+    expect(tie(threshold - 0.005)).toBe(true)
+    expect(tie(threshold - 0.05)).toBe(false)
+    const kpi = (k: Partial<typeof r.kpis>) => runChecks({ ...r, kpis: { ...r.kpis, ...k } })
+    expect(find(kpi({ equityIrr: D.targets.equityIrrHurdle - 1e-7 }), 'equity-hurdle').pass).toBe(true)
+    expect(find(kpi({ equityIrr: D.targets.equityIrrHurdle - 1e-3 }), 'equity-hurdle').pass).toBe(false)
+    expect(find(kpi({ dscrMin: 1 - 1e-10 }), 'dscr-floor').pass).toBe(true)
+    expect(find(kpi({ dscrMin: 0.99 }), 'dscr-floor').pass).toBe(false)
+    expect(find(kpi({ dscrMin: D.capital.dscrWarn - 1e-10 }), 'dscr-warn').pass).toBe(true)
+  })
+  it('gst-recovered passes at defaults and warns with the unrecovered amount at a low bid', () => {
+    expect(find(checks(D), 'gst-recovered')).toMatchObject({ pass: true, severity: 'warning' })
+    const r = runModel(setAt(D, 'deal.bidPrice', 1500))
+    const left = r.build.netGstCredit - r.ops.reduce((a, p) => a + p.gstRecovery, 0)
+    expect(left).toBeGreaterThan(1)
+    const c = find(runChecks(r), 'gst-recovered')
+    expect(c).toMatchObject({ pass: false, severity: 'warning' })
+    expect(c.message).toContain(fmt.cr(left))
+  })
+})
 
 describe('statement checks', () => {
   const r = runModel(D)
