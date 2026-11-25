@@ -23,7 +23,7 @@ const VIEWS: Record<SectionId, () => JSX.Element> = {
   returns: Returns, health: Health, scenarios: Scenarios,
 }
 
-/** If a scenario ever crashes the engine, offer a way out instead of a blank page: reset just that scenario, or everything. */
+/** If a scenario ever crashes the engine, offer a way out instead of a blank page: reset just that scenario, or its project. */
 export class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
@@ -35,11 +35,12 @@ export class Recover extends Component<{ children: ReactNode }, { failed: boolea
       <div role="alert" className="mx-auto mt-24 max-w-md rounded-lg border bg-card p-6 shadow-card">
         <h1 className="text-lg font-semibold">The model could not run on this scenario</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Reset this scenario to its base (or to the demo defaults, if it is the base) to continue. Your other scenarios are kept.
+          Reset this scenario to its base to continue; the base itself goes back to how the project started (the sample
+          data, or empty for a blank project). Or reset the whole project to a single Base case. Your other projects are kept.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => this.retry(resetActive)}>Reset this scenario</Button>
-          <Button variant="outline" onClick={() => this.retry(resetAll)}>Reset everything</Button>
+          <Button variant="outline" onClick={() => this.retry(resetAll)}>Reset this project</Button>
         </div>
       </div>
     )

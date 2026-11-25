@@ -20,7 +20,10 @@ export const under = (path: string) => (p: string) => p === path || p.startsWith
 
 // Project data starts empty; concession standards and statutory values are pre-filled; selects keep a default choice.
 const startsEmpty = (f: FieldDef) => !f.prefill && f.kind !== 'select' && !f.readOnly
-export const BLANK_EMPTY: string[] = FIELDS.filter(startsEmpty).flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)))
+const BLANK_FIELDS = FIELDS.filter(startsEmpty)
+export const BLANK_EMPTY: string[] = BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)))
+/** The field each blank leaf belongs to: 'capital.repayment.3' → 'capital.repayment'. */
+export const BLANK_FIELD_OF = new Map(BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).map(p => [p, f.id])))
 export const BLANK_INPUTS: Inputs = BLANK_EMPTY.reduce(
   (i, p) => setAt(i, p, typeof getAt(i, p) === 'string' ? '' : 0), DEFAULT_INPUTS)
 const EMPTIABLE = new Set(BLANK_EMPTY)
@@ -30,9 +33,32 @@ export const TEMPLATES: Record<Template, { inputs: Inputs; empty: string[] }> = 
   blank: { inputs: BLANK_INPUTS, empty: BLANK_EMPTY },
 }
 
-/** Untrusted empty paths: only leaves a blank project can have empty, in template order, no duplicates. */
+/**
+ * Empty paths as index ranges into BLANK_EMPTY ("0-80" for a fresh blank project), so a save stays a few bytes.
+ * ponytail: indices follow FIELDS order; reordering or adding blank-class fields needs a persist version bump + migrate.
+ */
+export function encodeEmpty(empty: string[]): string {
+  const has = new Set(empty), idx = BLANK_EMPTY.flatMap((p, i) => (has.has(p) ? [i] : []))
+  const out: string[] = []
+  for (let k = 0; k < idx.length; k++) {
+    let j = k
+    while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++
+    out.push(j > k ? `${idx[k]}-${idx[j]}` : String(idx[k]))
+    k = j
+  }
+  return out.join(',')
+}
+export const decodeEmpty = (s: string): string[] => s.split(',').flatMap(part => {
+  const m = /^(\d+)(?:-(\d+))?$/.exec(part)
+  if (!m) return []
+  const a = Number(m[1]), b = m[2] ? Number(m[2]) : a
+  return b < a || b >= BLANK_EMPTY.length ? [] : BLANK_EMPTY.slice(a, b + 1)
+})
+
+/** Untrusted empty paths (an encoded string or a list): only leaves a blank project can have empty, in template order. */
 export function validEmpty(raw: unknown): string[] {
-  const s = new Set(Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string' && EMPTIABLE.has(p)) : [])
+  const list: unknown[] = typeof raw === 'string' ? decodeEmpty(raw) : Array.isArray(raw) ? raw : []
+  const s = new Set(list.filter((p): p is string => typeof p === 'string' && EMPTIABLE.has(p)))
   return BLANK_EMPTY.filter(p => s.has(p))
 }
 

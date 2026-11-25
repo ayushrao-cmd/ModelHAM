@@ -18,6 +18,13 @@ function put(name: string, value: string, maxAge = MAX_AGE) {
   document.cookie = `${name}=${value}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`
 }
 
+/**
+ * Cookie-safe and decodable by decodeURIComponent: no ';', ',', '"', '\\', spaces or non-ASCII. JSON's ':{}[]' are
+ * valid cookie characters, so they stay readable instead of tripling into %XX (saved JSON shrinks by about a fifth).
+ */
+export const encodeCookie = (value: string) =>
+  encodeURIComponent(value).replace(/%(3A|5B|5D|7B|7D)/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
+
 const count = (m: Map<string, string>, key: string) => {
   const n = Number(m.get(`${key}.n`))
   return Number.isInteger(n) && n > 0 ? n : 0
@@ -39,7 +46,7 @@ export const cookies = {
 
   set(key: string, value: string) {
     const old = count(jar(), key)
-    const encoded = encodeURIComponent(value) // cookie-safe: no ';', ',', spaces or non-ASCII
+    const encoded = encodeCookie(value)
     const chunks = Math.max(1, Math.ceil(encoded.length / CHUNK))
     for (let i = 0; i < chunks; i++) put(`${key}.${i}`, encoded.slice(i * CHUNK, (i + 1) * CHUNK))
     put(`${key}.n`, String(chunks))

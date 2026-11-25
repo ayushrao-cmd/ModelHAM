@@ -86,6 +86,16 @@ describe('ResultsGate', () => {
     expect(window.location.hash).toBe('#/capital?focus=capital.repayment')
   })
 
+  it('a reset that empties a field takes the results away again', () => {
+    useStore.getState().createProject('blank')
+    fill(BLANK_EMPTY)
+    wrap(<ResultsGate><Results /></ResultsGate>)
+    expect(screen.getByText(/^IRR 0\.\d{4}/)).toBeTruthy()
+    act(() => useStore.getState().resetField('deal.bidPrice'))
+    expect(screen.queryByText(/^IRR/)).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Fill in 1 more field to see results' })).toBeTruthy()
+  })
+
   it('renders its children once the scenario is complete', () => {
     wrap(<ResultsGate><Results /></ResultsGate>)
     expect(screen.getByText(/^IRR 0\.\d{4}/)).toBeTruthy()
@@ -123,6 +133,26 @@ describe('empty fields', () => {
     act(() => { vi.advanceTimersByTime(500) })
     const s = useStore.getState()
     expect(s.scenarios[0].empty).not.toContain('operations.inflation.insurance')
+  })
+})
+
+describe('ProjectSwitcher', () => {
+  const openMenu = () => {
+    const t = screen.getByRole('button', { name: /switch project/ })
+    act(() => { t.focus(); fireEvent.keyDown(t, { key: 'Enter' }) })
+    return t
+  }
+  it('names the current project for assistive tech and returns focus to the trigger after Rename', async () => {
+    wrap(<Topbar onMenu={() => {}} />)
+    const trigger = openMenu()
+    expect(screen.getByRole('menuitem', { name: /Sample Greenfield.*current project/ })).toBeTruthy()
+    act(() => { fireEvent.click(screen.getByRole('menuitem', { name: /Rename/ })) })
+    const box = await screen.findByRole('textbox', { name: 'Project name' })
+    fireEvent.change(box, { target: { value: 'Ring Road' } })
+    act(() => { fireEvent.submit(box.closest('form')!) })
+    await vi.waitFor(() => expect(screen.queryByRole('textbox', { name: 'Project name' })).toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(trigger))
+    expect(trigger.textContent).toMatch(/Ring Road/)
   })
 })
 

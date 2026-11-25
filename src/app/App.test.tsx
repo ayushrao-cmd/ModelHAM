@@ -32,12 +32,15 @@ describe('Recover', () => {
     expect(st.scenarios.find(x => x.id === keep)!.inputs.deal.bidPrice).toBe(1900)
   })
 
-  it('offers a secondary Reset everything', () => {
+  it('offers a secondary Reset this project, which keeps other projects', () => {
+    const other = useStore.getState().projectId
+    useStore.getState().createProject('sample')
     useStore.getState().setActive(useStore.getState().createScenario('Broken'))
     useStore.getState().setInput('deal.buildDays', -30)
     render(<Recover><Bomb /></Recover>)
-    fireEvent.click(screen.getByRole('button', { name: 'Reset everything' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset this project' }))
     expect(screen.getByText('Model ok')).toBeTruthy()
     expect(useStore.getState().scenarios).toHaveLength(1)
+    expect(useStore.getState().projects.map(x => x.id)).toContain(other)
   })
 })

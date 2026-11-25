@@ -148,18 +148,83 @@ describe('projects', () => {
     expect(s.scenarios[0].empty).toEqual([])
   })
 
-  it('drops unknown empty paths on rehydrate and keeps empty leaves neutral', async () => {
+  it('on rehydrate drops unknown empty paths, and a blank leaf that is missing or wrong-typed becomes empty', async () => {
+    const inputs = structuredClone(DEFAULT_INPUTS) as unknown as { deal: Record<string, unknown> }
+    delete inputs.deal.authorityEstimate // missing
+    inputs.deal.lengthKm = 'long' // wrong type
     cookies.set(KEY, JSON.stringify({
       state: { projectId: 'p', projects: [{ id: 'p', template: 'blank', activeId: 's', baseId: 's', compareId: null, createdAt: 1,
-        scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs: { deal: { bidPrice: 999 } },
-          empty: ['deal.bidPrice', 'nope', 'income.spread', 7] }] }] },
+        scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: ['deal.bidPrice', 'nope', 'income.spread', 7] }] }] },
       version: 2,
     }))
     const m = await fresh()
-    // the unlisted blank dates ('' in the template) are not valid dates, so they are empty too
-    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.bidDate', 'income.rateQuoteDate'])
+    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm'])
     expect(act(m).inputs.deal.bidPrice).toBe(0)
-    expect(act(m).inputs.deal.lengthKm).toBe(0) // not listed as empty, so it holds the blank template value
+    expect(act(m).inputs.deal.lengthKm).toBe(0)
+    expect(act(m).inputs.deal.buildDays).toBe(DEFAULT_INPUTS.deal.buildDays)
+    // a save with almost nothing in it: every unsaved blank leaf is empty, never a computed 0
+    cookies.set(KEY, JSON.stringify({ state: { projectId: 'q', projects: [{ id: 'q', template: 'blank', activeId: 's', baseId: 's',
+      compareId: null, createdAt: 1, scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs: { deal: { bidPrice: 999 } }, empty: '' }] }] },
+    version: 2 }))
+    const { BLANK_EMPTY } = await import('./projects')
+    const n = await fresh()
+    expect(act(n).empty).toEqual(BLANK_EMPTY.filter(x => x !== 'deal.bidPrice'))
+    expect(act(n).inputs.deal.bidPrice).toBe(999)
+  })
+
+  it('saves empty fields compactly: ten fresh blank projects and the sample stay under 4 KB', async () => {
+    const m = await fresh()
+    for (let k = 0; k < 10; k++) m.useStore.getState().createProject('blank')
+    const saved = cookies.get(KEY)!
+    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-80')
+    const { encodeCookie } = await import('../lib/cookies')
+    expect(encodeCookie(saved).length).toBeLessThan(4096)
+    const b = await fresh()
+    expect(b.useStore.getState().projects).toHaveLength(11)
+    expect(act(b).empty).toHaveLength(81)
+  })
+
+  it('warns once, suggesting Export, when the saved state grows past about 12 KB', async () => {
+    const m = await fresh()
+    const { toast } = await import('sonner') // the same module instance the fresh store uses
+    const warn = vi.spyOn(toast, 'warning')
+    m.useStore.getState().setInput('deal.projectName', 'x'.repeat(13000))
+    m.useStore.getState().setInput('deal.authorityName', 'y'.repeat(13000))
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toMatch(/Export/)
+  })
+
+  it("clearing a blank project's text field makes it empty again", async () => {
+    const m = await fresh()
+    const st = m.useStore.getState
+    st().createProject('blank')
+    st().setInput('deal.projectName', 'Ring Road')
+    expect(act(m).empty).not.toContain('deal.projectName')
+    st().setInput('deal.projectName', '')
+    expect(act(m).empty).toContain('deal.projectName')
+    st().setProject(st().projects[0].id) // in the sample project '' is a value (Health flags it), not empty
+    st().setInput('deal.projectName', '')
+    expect(act(m).empty).toEqual([])
+  })
+
+  it('a duplicate is independent of its source', async () => {
+    const m = await fresh()
+    const st = m.useStore.getState
+    const src = st().createProject('blank')
+    st().setInput('deal.bidPrice', 1000)
+    const srcIds = st().scenarios.map(s => s.id)
+    const dup = st().createProject('duplicate')
+    expect(st().scenarios.map(s => s.id).some(id => srcIds.includes(id))).toBe(false)
+    st().setInput('deal.bidPrice', 2000)
+    st().setInput('deal.lengthKm', 12)
+    st().createScenario('Only in the copy')
+    st().setProject(src)
+    expect(act(m).inputs.deal.bidPrice).toBe(1000)
+    expect(act(m).empty).toContain('deal.lengthKm')
+    expect(st().scenarios).toHaveLength(1)
+    st().setProject(dup)
+    expect(act(m).inputs.deal.bidPrice).toBe(2000)
+    expect(st().scenarios).toHaveLength(2)
   })
 
   it('imports a scenario JSON with its empty paths into the active project', async () => {

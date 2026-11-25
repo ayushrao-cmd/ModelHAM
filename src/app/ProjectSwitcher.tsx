@@ -34,6 +34,9 @@ export function ProjectSwitcher() {
   const name = projectLabel(current)
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const opening = useRef(false) // a dialog opened from the menu keeps focus; the menu must not hand it back to the trigger
+  const trigger = useRef<HTMLButtonElement>(null)
+  // When a dialog closes, focus returns to the switcher (Radix would aim for the menu item, which is gone).
+  const backToTrigger = (e: Event) => { e.preventDefault(); trigger.current?.focus() }
 
   const open = (d: 'rename' | 'delete') => { opening.current = true; setDialog(d) }
   const create = (kind: 'blank' | 'sample' | 'duplicate') => {
@@ -53,7 +56,7 @@ export function ProjectSwitcher() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           {/* Below sm only the folder icon shows (the name stays its accessible label), leaving room for the scenario name. */}
-          <Button variant="outline" className="h-9 w-9 shrink-0 gap-1.5 bg-card px-0 sm:w-auto sm:min-w-0 sm:max-w-[15rem] sm:shrink sm:justify-between sm:px-3">
+          <Button ref={trigger} variant="outline" className="h-9 w-9 shrink-0 gap-1.5 bg-card px-0 sm:w-auto sm:min-w-0 sm:max-w-[15rem] sm:shrink sm:justify-between sm:px-3">
             <FolderOpen className="text-muted-foreground" aria-hidden="true" />
             <span className="sr-only sm:not-sr-only sm:truncate">{name}</span>
             <ChevronsUpDown className="hidden text-muted-foreground sm:block" aria-hidden="true" />
@@ -69,6 +72,7 @@ export function ProjectSwitcher() {
               <DropdownMenuItem key={p.id} onSelect={() => setProject(p.id)} className="gap-2">
                 <Check className={cn('text-primary', p.id !== projectId && 'invisible')} aria-hidden="true" />
                 <span className="flex-1 truncate">{projectLabel(p)}</span>
+                {p.id === projectId && <span className="sr-only">, current project</span>}
                 {tag && <span className={cn('shrink-0 rounded-full border px-1.5 text-[11px] leading-[18px] tabular-nums',
                   p.template === 'sample' ? 'border-warning/40 bg-warning/10 text-foreground' : 'text-muted-foreground')}>{tag}</span>}
               </DropdownMenuItem>
@@ -86,7 +90,7 @@ export function ProjectSwitcher() {
       </DropdownMenu>
 
       <Dialog open={dialog === 'rename'} onOpenChange={o => { if (!o) setDialog(null) }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" onCloseAutoFocus={backToTrigger}>
           <form onSubmit={rename} className="grid gap-4">
             <DialogTitle>Rename project</DialogTitle>
             <DialogDescription>Sets Project Name in every scenario of this project.</DialogDescription>
@@ -101,7 +105,7 @@ export function ProjectSwitcher() {
       </Dialog>
 
       <Dialog open={dialog === 'delete'} onOpenChange={o => { if (!o) setDialog(null) }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" onCloseAutoFocus={backToTrigger}>
           <DialogTitle className="break-words">Delete {name}?</DialogTitle>
           <DialogDescription>
             {current.scenarios.length === 1 ? 'Its scenario is' : `Its ${current.scenarios.length} scenarios are`} removed from this browser. Export them first to keep a copy.

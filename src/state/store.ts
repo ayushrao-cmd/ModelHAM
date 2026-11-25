@@ -3,13 +3,14 @@
 // scenario only as the fields that differ from its project's template, plus its empty paths; sanitised on the way in.
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
+import { toast } from 'sonner'
 import { isIsoDate } from '../engine/dates'
 import { DEFAULT_INPUTS } from '../engine/defaults'
 import type { Inputs } from '../engine/types'
 import { FIELDS } from '../fields'
-import { cookies } from '../lib/cookies'
+import { cookies, encodeCookie } from '../lib/cookies'
 import { getAt, setAt } from '../lib/path'
-import { BLANK_EMPTY, neutralise, TEMPLATES, type Template, under, validEmpty } from './projects'
+import { BLANK_EMPTY, BLANK_FIELD_OF, encodeEmpty, neutralise, TEMPLATES, type Template, under, validEmpty } from './projects'
 
 export type { Template } from './projects'
 /** `empty`: leaf paths with no value yet (blank projects); the engine never runs while any remain. */
@@ -71,11 +72,15 @@ const valid = (kind: string, v: unknown, options?: { value: string }[]) =>
 /**
  * Untrusted inputs onto a template. Empty paths are exempt from date/select validation; in a blank project an invalid
  * project-data value becomes empty rather than falling back to a template value. Empty leaves end up neutral.
+ * In a blank project every project-data leaf the raw data lacks (or that the shape check replaced) is empty too: a
+ * neutral placeholder is never shown or computed as if it were a value.
  */
 export function sanitize(raw: unknown, template: Template, rawEmpty: unknown): { inputs: Inputs; empty: string[] } {
   const base = TEMPLATES[template].inputs
-  let m = merge(base, typeof raw === 'string' ? parse(raw) : raw) as Inputs
+  const parsed = typeof raw === 'string' ? parse(raw) : raw
+  let m = merge(base, parsed) as Inputs
   const empty = new Set(validEmpty(rawEmpty).filter(p => getAt(m, p) !== undefined))
+  if (template === 'blank') for (const p of BLANK_EMPTY) if (getAt(m, p) !== getAt(isObj(parsed) ? parsed : {}, p)) empty.add(p)
   for (const f of FIELDS) {
     if (empty.has(f.id) || valid(f.kind, getAt(m, f.id), f.options)) continue
     if (template === 'blank' && BLANK_EMPTY.includes(f.id)) empty.add(f.id)
@@ -88,7 +93,8 @@ export function sanitize(raw: unknown, template: Template, rawEmpty: unknown): {
 
 export const mergeWithDefaults = (raw: unknown): Inputs => sanitize(raw, 'sample', []).inputs
 
-const uid = () => (globalThis.crypto?.randomUUID?.() ?? `s${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`)
+// ponytail: ~50 random bits is plenty for the few dozen ids one browser holds, and a third the size of a UUID in the cookie
+const uid = () => Math.random().toString(36).slice(2, 12).padEnd(10, '0')
 const scenario = (name: string, inputs: Inputs, empty: string[]): Scenario => ({ id: uid(), name, inputs, empty, updatedAt: Date.now() })
 const baseCase = (t: Template) => scenario('Base case', TEMPLATES[t].inputs, TEMPLATES[t].empty)
 const newProject = (template: Template): Project => {
@@ -110,6 +116,10 @@ export const projectLabel = (p: Active) => {
   return (!b.empty.includes('deal.projectName') && b.inputs.deal.projectName.trim()) || 'Untitled project'
 }
 
+// Above this many encoded characters the Cookie header nears common 8–16 KB server limits: warn once per session.
+const WARN_CHARS = 12 * 1024
+let warned = false
+
 // Cookies survive refresh until cleared. Blocked cookies must never break the app: fall back to memory-only.
 // The first load after the switch from localStorage reads the old save once, then removes it.
 const safeStorage: StateStorage = {
@@ -118,6 +128,10 @@ const safeStorage: StateStorage = {
     try { return localStorage.getItem(k) } catch { return null }
   },
   setItem: (k, v) => {
+    if (!warned && encodeCookie(v).length > WARN_CHARS) {
+      warned = true
+      toast.warning('Saved projects are getting large for browser cookies. Export the scenarios you need and delete projects you no longer use.')
+    }
     try { cookies.set(k, v) } catch { return /* memory only */ }
     try { localStorage.removeItem(k) } catch { /* nothing to migrate */ }
   },
@@ -134,6 +148,19 @@ function changedFrom(def: unknown, v: unknown): unknown {
     return Object.keys(out).length ? out : undefined
   }
   return JSON.stringify(def) === JSON.stringify(v) ? undefined : v
+}
+
+/**
+ * A scenario as saved: the fields that differ from its template. In a blank project a filled value equal to the neutral
+ * placeholder (e.g. 0% insurance inflation) is saved too (its whole field), since an unsaved blank leaf reloads as empty.
+ */
+function savedInputs(t: Template, s: Scenario): Inputs {
+  let d = (changedFrom(TEMPLATES[t].inputs, s.inputs) ?? {}) as Inputs
+  if (t === 'blank') {
+    const empty = new Set(s.empty)
+    for (const [p, fieldId] of BLANK_FIELD_OF) if (!empty.has(p) && getAt(d, p) === undefined) d = setAt(d, fieldId, getAt(s.inputs, fieldId))
+  }
+  return d
 }
 
 /** One untrusted project: sanitise every scenario against its template and repair dangling ids; null if unusable. */
@@ -188,7 +215,11 @@ export const useStore = create<Store>()(persist((set, get) => {
   const switchTo = (projects: Project[], p: Project) => set({ projects, projectId: p.id, ...pick(p) })
   return {
     ...initial(),
-    setInput: (path, value) => patch(get().activeId, s => assign(s, path, value)),
+    setInput: (path, value) => {
+      // Clearing a blank project's text field (Project or Authority Name) makes it empty again, not "filled with ''".
+      const cleared = value === '' && activeTemplate(get()) === 'blank' && BLANK_FIELD_OF.has(path)
+      patch(get().activeId, s => assign(s, path, value, cleared ? [path] : []))
+    },
     resetField: fieldId => {
       const ref = reference(get())
       patch(get().activeId, s => assign(s, fieldId, structuredClone(getAt(ref.inputs, fieldId)), ref.empty))
@@ -214,11 +245,8 @@ export const useStore = create<Store>()(persist((set, get) => {
       const inputs = isScenario ? raw.inputs as Record<string, unknown> : raw
       if (!INPUT_KEYS.some(k => k in inputs))
         return { ok: false, error: `That file is not a scenario: it has none of the model's sections (${INPUT_KEYS.join(', ')}).` }
-      const template = activeTemplate(get())
-      // A file without `empty` (an older export) is complete where it has values; in a blank project the rest stays empty.
-      const empty = isScenario && Array.isArray(raw.empty) ? raw.empty
-        : template === 'blank' ? BLANK_EMPTY.filter(p => getAt(inputs, p) === undefined) : []
-      const s = sanitize(inputs, template, empty)
+      // A file without `empty` (an older export) is complete where it has values; in a blank project sanitize leaves the rest empty.
+      const s = sanitize(inputs, activeTemplate(get()), isScenario ? raw.empty : [])
       const id = add(isScenario && typeof raw.name === 'string' ? raw.name : 'Imported scenario', s.inputs, s.empty)
       set({ activeId: id })
       return { ok: true }
@@ -267,7 +295,7 @@ export const useStore = create<Store>()(persist((set, get) => {
   partialize: s => ({
     projectId: s.projectId,
     projects: allProjects(s).map(p => ({ ...p, scenarios: p.scenarios.map(x => ({
-      ...x, inputs: (changedFrom(TEMPLATES[p.template].inputs, x.inputs) ?? {}) as Inputs })) })),
+      ...x, inputs: savedInputs(p.template, x), empty: encodeEmpty(x.empty) })) })),
   }),
   // v1 saved one list of scenarios: it becomes the one sample project.
   migrate: (raw, version) => (version < 2 && isObj(raw)
