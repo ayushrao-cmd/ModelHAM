@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { FieldDef } from '../../engine/types'
-import { formatNumber, parseNumber } from './parse'
+import { type Bounds, formatNumber, parseNumber } from './parse'
 
 type Kind = FieldDef['kind']
 const DEBOUNCE_MS = 150
@@ -11,7 +11,8 @@ const DEBOUNCE_MS = 150
  * A local draft string over a stored number. Valid drafts commit after a short pause or on blur;
  * invalid drafts stay local with an error, so the model never sees them.
  */
-function useNumberDraft(value: number, kind: Kind, commit: (n: number) => void) {
+function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit: (n: number) => void) {
+  const bounds = { min, max }
   const [draft, setDraft] = useState(() => formatNumber(value, kind))
   const [error, setError] = useState<string | null>(null)
   const draftRef = useRef(draft)
@@ -23,12 +24,12 @@ function useNumberDraft(value: number, kind: Kind, commit: (n: number) => void) 
 
   // The stored value changed elsewhere (reset, slider, scenario switch): show it, unless the draft already means it.
   useEffect(() => {
-    const p = parseNumber(draftRef.current, kind)
+    const p = parseNumber(draftRef.current, kind, { min, max })
     if (p.ok && p.value === value) return
     cancel()
     show(formatNumber(value, kind))
     setError(null)
-  }, [value, kind])
+  }, [value, kind, min, max])
 
   // Do not drop a pending edit if the field unmounts inside the debounce window.
   useEffect(() => () => { clearTimeout(timer.current); flush.current?.() }, [])
@@ -38,7 +39,7 @@ function useNumberDraft(value: number, kind: Kind, commit: (n: number) => void) 
     onChange(raw: string) {
       show(raw)
       cancel()
-      const p = parseNumber(raw, kind)
+      const p = parseNumber(raw, kind, bounds)
       setError(p.ok ? null : p.error)
       if (!p.ok || p.value === value) return
       flush.current = () => { flush.current = null; commit(p.value) }
@@ -46,7 +47,7 @@ function useNumberDraft(value: number, kind: Kind, commit: (n: number) => void) 
     },
     onBlur() {
       cancel()
-      const p = parseNumber(draftRef.current, kind)
+      const p = parseNumber(draftRef.current, kind, bounds)
       if (!p.ok) return
       if (p.value !== value) commit(p.value)
       show(formatNumber(p.value, kind))
@@ -61,6 +62,9 @@ export interface NumberFieldProps {
   id: string
   value: number
   kind: Kind
+  /** FieldDef min/max: drafts outside them show an error and are never committed. */
+  min?: number
+  max?: number
   onCommit(n: number): void
   /** Ids of the field's own descriptions (help, check messages); the parse error is added here. */
   describedBy?: string
@@ -72,8 +76,8 @@ export interface NumberFieldProps {
   'aria-label'?: string
 }
 
-export function NumberField({ id, value, kind, onCommit, describedBy, tone, unit = true, className, 'aria-label': ariaLabel }: NumberFieldProps) {
-  const { draft, error, onChange, onBlur } = useNumberDraft(value, kind, onCommit)
+export function NumberField({ id, value, kind, min, max, onCommit, describedBy, tone, unit = true, className, 'aria-label': ariaLabel }: NumberFieldProps) {
+  const { draft, error, onChange, onBlur } = useNumberDraft(value, kind, { min, max }, onCommit)
   const u = unit ? UNIT[kind] : undefined
   const unitId = `${id}-unit`, errId = `${id}-parse`
   const ids = [u && unitId, error && errId, describedBy].filter(Boolean).join(' ') || undefined

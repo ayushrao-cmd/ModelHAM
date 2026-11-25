@@ -10,6 +10,9 @@ export const toDay = (iso: string): Day => {
 
 export const toIso = (d: Day): string => new Date(d * MS).toISOString().slice(0, 10)
 
+/** A real calendar date written YYYY-MM-DD (round-trips, so 2026-02-30 fails). */
+export const isIsoDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && toIso(toDay(s)) === s
+
 export const addDays = (d: Day, n: number): Day => d + n
 
 /** Excel EDATE: clamps to month end. */

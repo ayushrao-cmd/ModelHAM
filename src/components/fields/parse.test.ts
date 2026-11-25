@@ -27,6 +27,21 @@ describe('parseNumber', () => {
   })
 })
 
+describe('parseNumber bounds', () => {
+  it('rejects values outside min/max, in display units', () => {
+    const b = { min: 365, max: 1825 }
+    expect(parseNumber('-30', 'days', b)).toEqual({ ok: false, error: 'Enter at least 365.' })
+    expect(parseNumber('2,000', 'days', b)).toEqual({ ok: false, error: 'Enter at most 1,825.' })
+    expect(parseNumber('400', 'days', b)).toEqual({ ok: true, value: 400 })
+    expect(parseNumber('31', 'percent', { min: 0, max: 0.3 })).toEqual({ ok: false, error: 'Enter at most 30.' })
+  })
+  it('rejects non-integers for days and years kinds only', () => {
+    expect(parseNumber('400.5', 'days').ok).toBe(false)
+    expect(parseNumber('6.5', 'years').ok).toBe(false)
+    expect(parseNumber('2.5', 'money')).toEqual({ ok: true, value: 2.5 })
+  })
+})
+
 describe('formatNumber', () => {
   it('groups en-IN and shows percent kinds ×100 so they round-trip', () => {
     expect(formatNumber(2250, 'money')).toBe('2,250')

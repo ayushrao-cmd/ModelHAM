@@ -16,7 +16,8 @@ export function buildTimeline(i: Inputs): Timeline {
   const firstPayment = addDays(completion, i.income.firstPaymentLagDays)
   const end = addMonths(completion, 12 * deal.operateYears)
   const months: Day[] = []
-  for (let m = eomonth(start); m <= eomonth(completion); m = eomonth(m + 1)) months.push(m)
+  // No months when completion precedes start (Build Days < 1); runChecks reports it.
+  if (completion >= start) for (let m = eomonth(start); m <= eomonth(completion); m = eomonth(m + 1)) months.push(m)
   const payments = Array.from({ length: 2 * deal.operateYears }, (_, k) => addMonths(firstPayment, 6 * k))
   return { bid, award, agreement, start, completion, firstPayment, end, months, payments }
 }

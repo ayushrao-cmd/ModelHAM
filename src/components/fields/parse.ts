@@ -10,12 +10,19 @@ const NUMBER = /^-?(?:\d+(?:,\d+)*(?:\.\d*)?|\.\d+)$/
 /** Drops float residue: 9.82 / 100 is 0.09820000000000001 in IEEE doubles. */
 const clean = (n: number) => Number(n.toPrecision(12))
 
-export function parseNumber(raw: string, kind: Kind): Parsed {
+export interface Bounds { min?: number; max?: number }
+
+/** Text to number. Day and year counts must be whole; values outside `bounds` (FieldDef min/max) are rejected, never clamped. */
+export function parseNumber(raw: string, kind: Kind, bounds: Bounds = {}): Parsed {
   const s = raw.replace(/[₹\s]/g, '').replace(isPercent(kind) ? /%$/ : /cr$/i, '')
   if (!s) return { ok: false, error: 'Enter a value.' }
   if (!NUMBER.test(s)) return { ok: false, error: isPercent(kind) ? 'Enter a number in percent, e.g. 9.82.' : 'Enter a number, e.g. 2,250.' }
   const n = Number(s.replace(/,/g, ''))
-  return { ok: true, value: isPercent(kind) ? clean(n / 100) : n }
+  const value = isPercent(kind) ? clean(n / 100) : n
+  if ((kind === 'days' || kind === 'years') && !Number.isInteger(value)) return { ok: false, error: 'Enter a whole number.' }
+  if (bounds.min != null && value < bounds.min) return { ok: false, error: `Enter at least ${formatNumber(bounds.min, kind)}.` }
+  if (bounds.max != null && value > bounds.max) return { ok: false, error: `Enter at most ${formatNumber(bounds.max, kind)}.` }
+  return { ok: true, value }
 }
 
 export const formatNumber = (v: number, kind: Kind): string =>

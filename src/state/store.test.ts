@@ -61,6 +61,27 @@ describe('mergeWithDefaults', () => {
   })
 })
 
+describe('mergeWithDefaults: dates, selects and fixed values', () => {
+  it('replaces invalid ISO dates with the default (round-trip check)', async () => {
+    const { mergeWithDefaults } = await fresh()
+    for (const bad of ['abc', '', '2026-02-30', '2026-7-8', '2026-07-08T00:00'])
+      expect(mergeWithDefaults({ deal: { bidDate: bad } }).deal.bidDate, bad).toBe(DEFAULT_INPUTS.deal.bidDate)
+    expect(mergeWithDefaults({ income: { rateQuoteDate: 'soon' } }).income.rateQuoteDate).toBe(DEFAULT_INPUTS.income.rateQuoteDate)
+    expect(mergeWithDefaults({ deal: { bidDate: '2026-08-01' } }).deal.bidDate).toBe('2026-08-01')
+  })
+  it('replaces select values outside the allowed options with the default', async () => {
+    const { mergeWithDefaults } = await fresh()
+    const m = mergeWithDefaults({ deal: { pavement: 'gravel' }, build: { phasing: 'random' } })
+    expect(m.deal.pavement).toBe(DEFAULT_INPUTS.deal.pavement)
+    expect(m.build.phasing).toBe(DEFAULT_INPUTS.build.phasing)
+    expect(mergeWithDefaults({ build: { phasing: 'sCurve' } }).build.phasing).toBe('sCurve')
+  })
+  it('forces Operate Years to 15', async () => {
+    const { mergeWithDefaults } = await fresh()
+    expect(mergeWithDefaults({ deal: { operateYears: 20 } }).deal.operateYears).toBe(15)
+  })
+})
+
 describe('store', () => {
   it('starts with one Base case scenario that is active and base', async () => {
     const { useStore } = await fresh()
@@ -197,4 +218,37 @@ describe('store', () => {
     st().deleteScenario(id)
     expect(st().baseId).toBe(first)
   })
+
+  it('resetActive resets only the active scenario to its reference and keeps the others', async () => {
+    const { useStore } = await fresh()
+    const st = useStore.getState
+    const baseId = st().baseId
+    st().setInput('deal.bidPrice', 2100) // base differs from defaults
+    const other = st().createScenario('Other')
+    st().setActive(other)
+    st().setInput('deal.bidPrice', 1900)
+    const broken = st().createScenario('Broken')
+    st().setActive(broken)
+    st().setInput('deal.buildDays', -30)
+    st().resetActive()
+    expect(st().scenarios).toHaveLength(3)
+    expect(st().activeId).toBe(broken)
+    expect(st().scenarios.find(s => s.id === broken)!.inputs).toEqual(st().scenarios.find(s => s.id === baseId)!.inputs)
+    expect(st().scenarios.find(s => s.id === other)!.inputs.deal.bidPrice).toBe(1900)
+    st().setActive(baseId)
+    st().resetActive() // the base itself resets to the defaults
+    expect(st().scenarios.find(s => s.id === baseId)!.inputs).toEqual(DEFAULT_INPUTS)
+    expect(st().scenarios).toHaveLength(3)
+  })
+
+  it('resetAll starts over with a single Base case', async () => {
+    const { useStore } = await fresh()
+    const st = useStore.getState
+    st().setActive(st().createScenario('Extra'))
+    st().resetAll()
+    expect(st().scenarios).toHaveLength(1)
+    expect(st().scenarios[0].inputs).toEqual(DEFAULT_INPUTS)
+    expect(st().activeId).toBe(st().scenarios[0].id)
+  })
 })
+

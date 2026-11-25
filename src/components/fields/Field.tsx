@@ -26,6 +26,7 @@ const RANK = { error: 0, warning: 1, info: 2 }
 // ponytail: inputs are plain JSON data, so string equality is deep equality
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
 const clean = (n: number) => Number(n.toPrecision(12))
+const show = (def: FieldDef, v: unknown) => def.kind === 'years' ? `${v} years` : def.kind === 'days' ? `${v} days` : String(v)
 
 /** Scroll to, focus and flash the field when a jump (palette, health, deep link) names it. */
 function useJumpTarget(id: string, root: React.RefObject<HTMLDivElement>) {
@@ -98,8 +99,10 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   const toneCls = tone === 'error' ? 'border-destructive' : tone === 'warning' ? 'border-warning' : undefined
 
   let control: React.ReactNode
-  if (NUMERIC.includes(def.kind) && !isList)
-    control = <NumberField id={dom} value={value as number} kind={def.kind} onCommit={commit} describedBy={describedBy} tone={tone} />
+  if (def.readOnly) // fixed by the concession agreement: shown, never edited
+    control = <Input id={dom} readOnly value={show(def, value)} {...aria} className="bg-muted tabular-nums" />
+  else if (NUMERIC.includes(def.kind) && !isList)
+    control = <NumberField id={dom} value={value as number} kind={def.kind} min={def.min} max={def.max} onCommit={commit} describedBy={describedBy} tone={tone} />
   else if (def.kind === 'years') // a tuple, e.g. the two resurfacing years
     control = (
       <div role="group" aria-labelledby={labelId} {...aria} className="grid grid-cols-2 gap-2">

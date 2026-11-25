@@ -1,8 +1,10 @@
 // Scenario store: every scenario is a full Inputs object; persisted to localStorage, sanitised on the way in.
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
+import { isIsoDate } from '../engine/dates'
 import { DEFAULT_INPUTS } from '../engine/defaults'
 import type { Inputs } from '../engine/types'
+import { FIELDS } from '../fields'
 import { getAt, setAt } from '../lib/path'
 
 export interface Scenario { id: string; name: string; inputs: Inputs; updatedAt: number }
@@ -17,6 +19,10 @@ interface Store {
   setBase(id: string): void
   setCompare(id: string | null): void
   importScenario(json: string): { ok: boolean; error?: string }
+  /** Recovery: the active scenario back to its reference (base, or defaults for the base itself); others untouched. */
+  resetActive(): void
+  /** Recovery of last resort: a single fresh Base case. */
+  resetAll(): void
 }
 
 const INPUT_KEYS = Object.keys(DEFAULT_INPUTS) // deal, milestones, build, … targets
@@ -41,8 +47,14 @@ function merge(def: unknown, raw: unknown): unknown {
   return typeof raw === typeof def ? raw : def
 }
 
+/** Values the shape check can't judge: dates must be real ISO dates, selects one of their options. */
+const valid = (kind: string, v: unknown, options?: { value: string }[]) =>
+  kind === 'date' ? isIsoDate(v) : kind === 'select' ? !!options?.some(o => o.value === v) : true
+
 export function mergeWithDefaults(raw: unknown): Inputs {
-  return merge(DEFAULT_INPUTS, typeof raw === 'string' ? parse(raw) : raw) as Inputs
+  let m = merge(DEFAULT_INPUTS, typeof raw === 'string' ? parse(raw) : raw) as Inputs
+  for (const f of FIELDS) if (!valid(f.kind, getAt(m, f.id), f.options)) m = setAt(m, f.id, getAt(DEFAULT_INPUTS, f.id))
+  return setAt(m, 'deal.operateYears', DEFAULT_INPUTS.deal.operateYears) // fixed at 15 by the concession agreement
 }
 
 const uid = () => (globalThis.crypto?.randomUUID?.() ?? `s${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`)
@@ -111,6 +123,8 @@ export const useStore = create<Store>()(persist((set, get) => {
       set({ activeId: id })
       return { ok: true }
     },
+    resetActive: () => patch(get().activeId, s => ({ ...s, inputs: structuredClone(referenceInputs(get())) })),
+    resetAll: () => set(initial()),
   }
 }, {
   name: 'milestone.scenarios.v1',

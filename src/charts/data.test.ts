@@ -48,3 +48,14 @@ describe('chart data mappers', () => {
     expect(d[0].end).toBeCloseTo(-r.build.equity, 6)
   })
 })
+
+describe('chart data mappers with no build months', () => {
+  it('do not throw on an empty build grid', () => {
+    const e = runModel({ ...i, deal: { ...i.deal, buildDays: -30 } })
+    expect(e.build.months).toEqual([])
+    expect(drawdownData(e)).toEqual({ rows: [], markers: [] })
+    expect(milestoneData(e)).toEqual([])
+    expect(() => sourcesUsesData(e)).not.toThrow()
+  })
+})
+

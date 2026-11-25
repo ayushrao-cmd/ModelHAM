@@ -36,8 +36,9 @@ export const FIELDS: FieldDef[] = [
   dates('deal.daysToAward', 'Days to Award', 'days', 'Days from bid date to award.', { min: 0, step: 5 }),
   dates('deal.daysToAgreement', 'Days to Agreement', 'days', 'Days from award to signing the concession agreement.', { min: 0, step: 5 }),
   dates('deal.daysToStart', 'Days to Start', 'days', 'Days from agreement to the Start Date (appointed date).', { min: 0, step: 5 }),
-  dates('deal.buildDays', 'Build Days', 'days', 'Construction period in days from Start Date to Completion Date (at least a year).', { min: 365, step: 30 }),
-  dates('deal.operateYears', 'Operate Years', 'years', 'Operations period in years after completion.', { min: 1, max: 30, step: 1 }),
+  dates('deal.buildDays', 'Build Days', 'days', 'Construction period in days from Start Date to Completion Date, one to five years (365 to 1,825 days).', { min: 365, max: 1825, step: 30 }),
+  // Fixed: the payment, repayment and O&M schedules are fixed-length lists sized for 15 years.
+  dates('deal.operateYears', 'Operate Years', 'years', 'Fixed at 15 years by the concession agreement.', { min: 15, max: 15, readOnly: true }),
   bid('deal.pavement', 'Pavement Type', 'select', 'Sets the maintenance payment in the year before resurfacing.',
     { options: [{ value: 'flexible', label: 'Flexible' }, { value: 'flexiblePerpetual', label: 'Flexible perpetual' }] }),
 
@@ -61,19 +62,19 @@ export const FIELDS: FieldDef[] = [
     { options: [{ value: 'equated', label: 'Equated monthly' }, { value: 'sCurve', label: 'S-curve' }] }),
 
   struct('support.pctOfBid', 'Construction Support (% of Bid)', 'percent', 'Total Construction Support from the Authority as a share of Bid Price.', { min: 0, max: 0.6, step: 0.01 }),
-  struct('support.tranches', 'Support Tranches', 'trancheList', 'Physical progress at which each Construction Support tranche is paid, and its share of Bid Price.'),
+  struct('support.tranches', 'Support Tranches', 'trancheList', 'Physical progress at which each Construction Support tranche is paid, and its weight: Construction Support (% of Bid) is split across tranches in proportion to their weights.'),
 
   struct('capital.equityPct', 'Equity Share of Funding', 'percent', 'Equity as a share of funding need; the rest is debt.', { min: 0, max: 1, step: 0.01 }),
   struct('capital.upfrontEquityPct', 'Upfront Equity', 'percent', 'Share of equity invested before debt is drawn.', { min: 0, max: 1, step: 0.05 }),
   struct('capital.shareCapitalPct', 'Share Capital (% of Equity)', 'percent', 'Share-capital portion of equity; the rest is promoter sub-debt (display split only).', { min: 0, max: 1, step: 0.05 }),
   loan('capital.buildRate', 'Loan Rate – Build', 'percent', 'Interest rate on senior debt during build.', { min: 0, max: 0.2, step: 0.0025, key: true }),
   loan('capital.operateRate', 'Loan Rate – Operate', 'percent', 'Interest rate on senior debt during operations.', { min: 0, max: 0.2, step: 0.0025, key: true }),
-  repay('capital.repayment', 'Repayment Schedule', 'percentList', '25 half-yearly principal installments as shares of debt; must total 100%.'),
+  repay('capital.repayment', 'Repayment Schedule', 'percentList', '25 half-yearly principal repayments as shares of debt; must total 100%.'),
   struct('capital.maxLeverage', 'Max Debt / Equity', 'number', 'Health warning above this debt-to-equity ratio.', { min: 0, step: 0.1 }),
   loan('capital.dscrWarn', 'DSCR Warning Level', 'number', 'Health warning when minimum DSCR falls below this.', { min: 1, step: 0.05 }),
 
   compl('income.completionPctOfBid', 'Completion Payments (% of Bid)', 'percent', 'Share of Bid Price paid after completion as Completion Payments.', { min: 0, max: 1, step: 0.01 }),
-  compl('income.installments', 'Completion Payment Schedule', 'percentList', '30 half-yearly shares of the Completion Payments; must total 100%.'),
+  compl('income.installments', 'Completion Payment Schedule', 'percentList', '30 half-yearly installments of the Completion Payments; must total 100%.'),
   compl('income.firstPaymentLagDays', 'First Payment Lag', 'days', 'Days from Completion Date to the first payment.', { min: 0, step: 5 }),
   rate('income.bankRates', 'Reference Lending Rates', 'percentList', 'Five bank reference rates averaged for the Annuity Rate.', { key: true }),
   rate('income.spread', 'Annuity Spread', 'percent', 'Spread added to the average reference rate.', { min: 0, max: 0.05, step: 0.0005 }),

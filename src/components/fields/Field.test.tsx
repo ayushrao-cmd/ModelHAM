@@ -121,4 +121,39 @@ describe('Field', () => {
     expect(active('capital.repayment.0')).toBe(0.025)
     expect(screen.getByText('Σ 101.00%')).toBeTruthy()
   })
+
+  it('never commits a value outside the field min/max: Build Days −30 shows an inline error and keeps the last valid value', () => {
+    vi.useFakeTimers()
+    mount('deal.buildDays')
+    const input = screen.getByLabelText('Build Days') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '-30' } })
+    act(() => { vi.advanceTimersByTime(500) })
+    fireEvent.blur(input)
+    expect(screen.getByText('Enter at least 365.')).toBeTruthy()
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(active('deal.buildDays')).toBe(1095)
+    fireEvent.change(input, { target: { value: '2,000' } })
+    fireEvent.blur(input)
+    expect(screen.getByText('Enter at most 1,825.')).toBeTruthy()
+    expect(active('deal.buildDays')).toBe(1095)
+  })
+
+  it('never commits a non-integer day count', () => {
+    vi.useFakeTimers()
+    mount('deal.buildDays')
+    const input = screen.getByLabelText('Build Days')
+    fireEvent.change(input, { target: { value: '1000.5' } })
+    fireEvent.blur(input)
+    expect(screen.getByText(/whole number/i)).toBeTruthy()
+    expect(active('deal.buildDays')).toBe(1095)
+  })
+
+  it('shows Operate Years read-only, fixed at 15', () => {
+    mount('deal.operateYears')
+    const input = screen.getByLabelText('Operate Years') as HTMLInputElement
+    expect(input.readOnly).toBe(true)
+    expect(input.value).toBe('15 years')
+    expect(screen.getByText(/Fixed at 15 years by the concession agreement/)).toBeTruthy()
+  })
 })
+

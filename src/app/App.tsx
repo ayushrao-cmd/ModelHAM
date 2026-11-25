@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SectionId } from '../engine/types'
+import { useStore } from '../state/store'
 import { Build } from '../sections/Build'
 import { Capital } from '../sections/Capital'
 import { Deal } from '../sections/Deal'
@@ -22,21 +23,24 @@ const VIEWS: Record<SectionId, () => JSX.Element> = {
   returns: Returns, health: Health, scenarios: Scenarios,
 }
 
-/** If a stored scenario ever crashes the engine, offer a way out instead of a blank page. */
-class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
+/** If a scenario ever crashes the engine, offer a way out instead of a blank page: reset just that scenario, or everything. */
+export class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
-  reset = () => {
-    try { localStorage.removeItem('milestone.scenarios.v1') } catch { /* storage blocked */ }
-    location.reload()
-  }
+  retry(reset: () => void) { reset(); this.setState({ failed: false }) } // persist writes through, so a reload keeps the fix
   render() {
     if (!this.state.failed) return this.props.children
+    const { resetActive, resetAll } = useStore.getState()
     return (
       <div role="alert" className="mx-auto mt-24 max-w-md rounded-lg border bg-card p-6 shadow-card">
-        <h1 className="text-lg font-semibold">The model could not run on the saved scenarios</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Reset to the demo base case to continue. Saved scenarios in this browser are cleared.</p>
-        <Button className="mt-4" onClick={this.reset}>Reset to base case</Button>
+        <h1 className="text-lg font-semibold">The model could not run on this scenario</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Reset this scenario to its base (or to the demo defaults, if it is the base) to continue. Your other scenarios are kept.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={() => this.retry(resetActive)}>Reset this scenario</Button>
+          <Button variant="outline" onClick={() => this.retry(resetAll)}>Reset everything</Button>
+        </div>
       </div>
     )
   }

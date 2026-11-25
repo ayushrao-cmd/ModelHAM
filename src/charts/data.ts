@@ -33,12 +33,14 @@ function monthOf(r: ModelResult, day: number) {
 export function drawdownData(r: ModelResult) {
   const rows = r.build.months.map(m => ({ month: toIso(m.day), support: m.supportReceived + m.supportGst,
     equity: m.equityDraw, debt: m.debtDraw }))
-  const markers = r.inputs.milestones.map((ms, n) => ({ month: rows[monthOf(r, ms.day)].month, label: `M${n + 1}` }))
+  // No build months (Health's build-period check fails): no markers to place.
+  const markers = rows.length ? r.inputs.milestones.map((ms, n) => ({ month: rows[monthOf(r, ms.day)].month, label: `M${n + 1}` })) : []
   return { rows, markers }
 }
 
 export function milestoneData(r: ModelResult) {
   const months = r.build.months
+  if (!months.length) return [] // no build months: nothing to measure milestones against
   const epcTotal = sum(months.map(m => m.epc))
   let acc = 0
   const financial = months.map(m => (acc += m.epc) / epcTotal) // cumulative EPC spend share, as in Health
