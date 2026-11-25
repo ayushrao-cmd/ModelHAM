@@ -22,13 +22,20 @@ npm run lint
 npm run build      # static site in dist/, deploy anywhere
 ```
 
+## Saved data
+
+Scenarios and the theme choice are saved in browser cookies (`milestone.scenarios.v1.*`, `milestone.theme.*`),
+so they survive refreshes and restarts until you clear cookies for the site. Only fields that differ from the
+defaults are stored, split across ~4 KB cookies. Browsers cap cookie lifetime (Chrome: 400 days, renewed on every
+save; Safari: 7 days for script-set cookies). Use Export → scenario JSON for a permanent copy.
+
 ## App structure
 
 | Path | What lives there |
 |---|---|
 | `src/engine/` | Pure, deterministic TypeScript model: timeline, build-period sources & uses with the interest-during-build (IDC) fixed point, operations, debt, tax, XIRR returns, health checks, bid-price solver, tornado sensitivity |
 | `src/fields.ts` | Field registry: label, unit, range, help and section for every input |
-| `src/state/` | Zustand store (scenarios, active scenario, persistence) and the memoised `useModel` hook |
+| `src/state/` | Zustand store (scenarios, active scenario) persisted to browser cookies, and the memoised `useModel` hook |
 | `src/app/` | Shell: hash router (`#/overview`, `#/deal`, …), sidebar, top bar, ⌘K command palette, theme |
 | `src/sections/` | One screen per section: Overview, Deal & Timeline, Build, Capital, Income, Operations, Returns, Health, Scenarios |
 | `src/components/` | Typed input fields, KPI tiles, data tables, solve card, shadcn/ui primitives |

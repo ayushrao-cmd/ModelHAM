@@ -1,10 +1,12 @@
-// Scenario store: every scenario is a full Inputs object; persisted to localStorage, sanitised on the way in.
+// Scenario store: every scenario is a full Inputs object; persisted to cookies (only fields that differ
+// from the defaults), sanitised on the way in.
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { isIsoDate } from '../engine/dates'
 import { DEFAULT_INPUTS } from '../engine/defaults'
 import type { Inputs } from '../engine/types'
 import { FIELDS } from '../fields'
+import { cookies } from '../lib/cookies'
 import { getAt, setAt } from '../lib/path'
 
 export interface Scenario { id: string; name: string; inputs: Inputs; updatedAt: number }
@@ -61,11 +63,30 @@ const uid = () => (globalThis.crypto?.randomUUID?.() ?? `s${Date.now().toString(
 const scenario = (name: string, inputs: Inputs): Scenario => ({ id: uid(), name, inputs, updatedAt: Date.now() })
 const initial = () => { const s = scenario('Base case', DEFAULT_INPUTS); return { scenarios: [s], activeId: s.id, baseId: s.id, compareId: null } }
 
-// Private mode / quota / disabled storage must never break the app: fall back to memory-only.
+// Cookies survive refresh until cleared. Blocked cookies must never break the app: fall back to memory-only.
+// The first load after the switch from localStorage reads the old save once, then removes it.
 const safeStorage: StateStorage = {
-  getItem: k => { try { return localStorage.getItem(k) } catch { return null } },
-  setItem: (k, v) => { try { localStorage.setItem(k, v) } catch { /* memory only */ } },
-  removeItem: k => { try { localStorage.removeItem(k) } catch { /* memory only */ } },
+  getItem: k => {
+    try { const v = cookies.get(k); if (v !== null) return v } catch { /* cookies blocked */ }
+    try { return localStorage.getItem(k) } catch { return null }
+  },
+  setItem: (k, v) => {
+    try { cookies.set(k, v) } catch { return /* memory only */ }
+    try { localStorage.removeItem(k) } catch { /* nothing to migrate */ }
+  },
+  removeItem: k => {
+    try { cookies.remove(k) } catch { /* memory only */ }
+    try { localStorage.removeItem(k) } catch { /* memory only */ }
+  },
+}
+
+/** Only what differs from the defaults (arrays as a whole), so a saved scenario is a few hundred bytes. */
+function changedFrom(def: unknown, v: unknown): unknown {
+  if (isObj(def) && isObj(v)) {
+    const out = Object.fromEntries(Object.keys(def).map(k => [k, changedFrom(def[k], v[k])]).filter(([, d]) => d !== undefined))
+    return Object.keys(out).length ? out : undefined
+  }
+  return JSON.stringify(def) === JSON.stringify(v) ? undefined : v
 }
 
 type Persisted = Pick<Store, 'scenarios' | 'activeId' | 'baseId' | 'compareId'>
@@ -130,7 +151,10 @@ export const useStore = create<Store>()(persist((set, get) => {
   name: 'milestone.scenarios.v1',
   version: 1,
   storage: createJSONStorage(() => safeStorage),
-  partialize: ({ scenarios, activeId, baseId, compareId }) => ({ scenarios, activeId, baseId, compareId }),
+  partialize: ({ scenarios, activeId, baseId, compareId }) => ({
+    scenarios: scenarios.map(s => ({ ...s, inputs: (changedFrom(DEFAULT_INPUTS, s.inputs) ?? {}) as Inputs })),
+    activeId, baseId, compareId,
+  }),
   // Runs on rehydrate (the brief's onRehydrateStorage step): sanitises before state is set, so no render sees raw storage.
   merge: (persisted, current) => ({ ...current, ...rehydrate(persisted) }),
 }))

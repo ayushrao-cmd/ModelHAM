@@ -9,8 +9,8 @@
     <!-- Apply the saved or system theme before first paint (mirrors src/app/theme.ts). -->
     <script>
       try {
-        var t = localStorage.getItem('milestone.theme')
-        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        var m = document.cookie.match(/(?:^|; )milestone\.theme\.0=(light|dark)(?:;|$)/)
+        var t = m ? m[1] : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         document.documentElement.classList.toggle('dark', t === 'dark')
         document.documentElement.style.colorScheme = t
       } catch (e) {}

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_INPUTS } from '../engine/defaults'
+import { cookies } from '../lib/cookies'
+
+const KEY = 'milestone.scenarios.v1'
+const cookieNames = () => document.cookie.split('; ').filter(Boolean).map(c => c.split('=')[0])
+const clearCookies = () => { for (const n of cookieNames()) document.cookie = `${n}=; path=/; max-age=0` }
 
 const fresh = async () => {
   vi.resetModules()
@@ -9,6 +14,7 @@ const fresh = async () => {
 beforeEach(() => {
   vi.restoreAllMocks()
   localStorage.clear()
+  clearCookies()
 })
 
 describe('mergeWithDefaults', () => {
@@ -94,18 +100,59 @@ describe('store', () => {
     expect(s.compareId).toBeNull()
   })
 
-  it('initialises and still works in memory when localStorage throws', async () => {
+  it('initialises and still works in memory when cookies and localStorage throw', async () => {
     const boom = () => { throw new Error('denied') }
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(boom)
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(boom)
+    const desc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')!
+    Object.defineProperty(document, 'cookie', { configurable: true, get: boom, set: boom })
+    try {
+      const { useStore } = await fresh()
+      expect(useStore.getState().scenarios).toHaveLength(1)
+      useStore.getState().setInput('deal.bidPrice', 1999)
+      expect(useStore.getState().scenarios[0].inputs.deal.bidPrice).toBe(1999)
+    } finally {
+      delete (document as unknown as Record<string, unknown>).cookie
+      expect(Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')).toEqual(desc)
+    }
+  })
+
+  it('saves edits to cookies and a reload (fresh module) restores them', async () => {
+    const a = await fresh()
+    a.useStore.getState().setInput('deal.bidPrice', 2345)
+    const id = a.useStore.getState().createScenario('Second')
+    a.useStore.getState().setActive(id)
+    expect(cookies.get(KEY)).not.toBeNull()
+    const b = await fresh()
+    const s = b.useStore.getState()
+    expect(s.scenarios).toHaveLength(2)
+    expect(s.scenarios[0].inputs.deal.bidPrice).toBe(2345)
+    expect(s.activeId).toBe(id)
+  })
+
+  it('stores only fields that differ from the defaults, so the cookie stays small', async () => {
     const { useStore } = await fresh()
-    expect(useStore.getState().scenarios).toHaveLength(1)
-    useStore.getState().setInput('deal.bidPrice', 1999)
-    expect(useStore.getState().scenarios[0].inputs.deal.bidPrice).toBe(1999)
+    useStore.getState().setInput('deal.bidPrice', 2345)
+    useStore.getState().setInput('capital.repayment.0', 0.02)
+    const saved = JSON.parse(cookies.get(KEY)!).state.scenarios[0].inputs
+    expect(saved).toEqual({ deal: { bidPrice: 2345 }, capital: { repayment: [0.02, ...DEFAULT_INPUTS.capital.repayment.slice(1)] } })
+  })
+
+  it('migrates scenarios saved by the old localStorage version into cookies', async () => {
+    localStorage.setItem(KEY, JSON.stringify({
+      state: { scenarios: [{ id: 'old', name: 'Old save', inputs: { deal: { bidPrice: 2111 } }, updatedAt: 1 }],
+        activeId: 'old', baseId: 'old', compareId: null },
+      version: 1,
+    }))
+    const { useStore } = await fresh()
+    expect(useStore.getState().scenarios[0].inputs.deal.bidPrice).toBe(2111)
+    useStore.getState().setInput('deal.lengthKm', 40)
+    expect(JSON.parse(cookies.get(KEY)!).state.scenarios[0].inputs.deal).toEqual({ bidPrice: 2111, lengthKm: 40 })
+    expect(localStorage.getItem(KEY)).toBeNull()
   })
 
   it('rehydrates persisted scenarios through mergeWithDefaults', async () => {
-    localStorage.setItem('milestone.scenarios.v1', JSON.stringify({
+    cookies.set(KEY, JSON.stringify({
       state: { scenarios: [{ id: 'a', name: 'Saved', inputs: { deal: { bidPrice: 2100 }, junk: true }, updatedAt: 1 }],
         activeId: 'a', baseId: 'a', compareId: null },
       version: 1,
@@ -119,7 +166,7 @@ describe('store', () => {
   })
 
   it('falls back to a fresh Base case when persisted state is garbage', async () => {
-    localStorage.setItem('milestone.scenarios.v1', '{"state":{"scenarios":"nope"},"version":1}')
+    cookies.set(KEY, '{"state":{"scenarios":"nope"},"version":1}')
     const { useStore } = await fresh()
     const s = useStore.getState()
     expect(s.scenarios).toHaveLength(1)
