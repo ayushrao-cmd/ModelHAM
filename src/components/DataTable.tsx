@@ -37,11 +37,12 @@ export function DataTable({ title, description, columns, rows, total, className 
     if (ok) toast.success(`Copied ${title} as CSV`)
     else toast.error('Copy failed: your browser blocked clipboard access.')
   }
-  // Row labels wrap on phones so the sticky label column leaves room for the numbers beside it.
+  // Row labels wrap when space is short, so the sticky label column leaves room for the numbers beside it.
   const cell = (v: Cell, k: number) => cn('px-3 py-1.5', typeof v === 'number' ? 'whitespace-nowrap text-right tabular-nums' : 'text-left',
-    k === 0 ? 'sticky left-0 min-w-32 bg-card pl-0 sm:whitespace-nowrap' : 'whitespace-nowrap')
+    k === 0 ? 'sticky left-0 min-w-32 bg-card pl-0' : 'whitespace-nowrap', k === columns.length - 1 && 'pr-0')
   return (
-    <section aria-labelledby={id} className="min-w-0">
+    // A plain div, not <section>: the scroll region below already carries the title, and two same-named regions confuse landmark navigation.
+    <div className="min-w-0">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
           <h2 id={id} className="text-sm font-medium">{title}</h2>
@@ -58,7 +59,7 @@ export function DataTable({ title, description, columns, rows, total, className 
             <tr>
               {columns.map((c, k) => (
                 <th key={c.label} scope="col" className={cn('sticky top-0 z-10 whitespace-nowrap border-b bg-card px-3 py-2 text-xs font-medium text-muted-foreground',
-                  k === 0 ? 'left-0 z-20 pl-0 text-left' : 'text-right')}>{c.label}</th>
+                  k === 0 ? 'left-0 z-20 pl-0 text-left' : typeof rows[0]?.[k] === 'number' ? 'text-right' : 'text-left', k === columns.length - 1 && 'pr-0')}>{c.label}</th>
               ))}
             </tr>
           </thead>
@@ -82,6 +83,6 @@ export function DataTable({ title, description, columns, rows, total, className 
           )}
         </table>
       </div>
-    </section>
+    </div>
   )
 }

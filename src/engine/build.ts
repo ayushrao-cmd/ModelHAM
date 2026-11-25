@@ -127,10 +127,10 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     if (converged) break
   }
 
-  const use = (k: string) => pass.uses.find(u => u.key === k)!.net
+  const lineNet = (k: string) => pass.uses.find(u => u.key === k)!.net
   const shareCapital = E * i.capital.shareCapitalPct
-  return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, epcVariable: use('epcVariable'),
+  return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, epcVariable: lineNet('epcVariable'),
     equity: E, shareCapital,
-    promoterDebt: E - shareCapital, debt: D, idc: pass.idc, reserve: use('reserve'), workingCapital: use('workingCapital'),
+    promoterDebt: E - shareCapital, debt: D, idc: pass.idc, reserve: lineNet('reserve'), workingCapital: lineNet('workingCapital'),
     netGstCredit: Math.max(0, sum(pass.months.map(m => m.gstPaid)) - supportGstTotal), converged, iterations }
 }

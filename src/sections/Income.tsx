@@ -26,7 +26,7 @@ export function Income() {
         <Panel><IncomeChart result={r} /></Panel>
         <Panel>
           <DataTable title="Income by payment period" description="₹ Cr, half-yearly"
-            columns={[{ label: 'Period' }, { label: 'Date' }, { label: 'Completion payment' }, { label: 'Interest' }, { label: 'O&M' }, { label: 'Total' }]}
+            columns={[{ label: 'Period' }, { label: 'Date' }, { label: 'Completion' }, { label: 'Interest' }, { label: 'O&M' }, { label: 'Total' }]}
             rows={ops.map(p => [String(p.n), fmt.date(p.day), p.completionPayment, p.interestIncome, p.omPayment,
               p.completionPayment + p.interestIncome + p.omPayment])}
             total={['Total', '', completion, interest, om, completion + interest + om]} className="max-h-96" />

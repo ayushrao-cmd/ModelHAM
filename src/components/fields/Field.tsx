@@ -116,7 +116,7 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   else if (def.kind === 'select')
     control = (
       <Select value={value as string} onValueChange={v => setInput(id, v)}>
-        <SelectTrigger id={dom} {...aria} className={cn('bg-card', toneCls)}><SelectValue /></SelectTrigger>
+        <SelectTrigger id={dom} aria-labelledby={`${labelId} ${dom}`} {...aria} className={cn('bg-card', toneCls)}><SelectValue /></SelectTrigger>
         <SelectContent>{def.options?.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
       </Select>
     )
@@ -130,9 +130,9 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   return (
     <div ref={root} data-field={id} className={cn('min-w-0 rounded-md', className)}
       onAnimationEnd={e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('field-flash') }}>
-      <div className="flex min-h-7 items-center gap-1.5">
+      <div className={cn('flex items-center gap-1.5', !(labelHidden && !changed) && 'min-h-7')}>
         <Label {...labelProps} className={cn('min-w-0 text-sm font-medium leading-5', labelHidden && 'sr-only')}>{def.label}</Label>
-        {def.help && (
+        {def.help && !labelHidden && (
           <Tooltip>
             <TooltipTrigger asChild>
               {/* Focusable, so the tooltip opens on keyboard focus as well as hover. */}
@@ -153,7 +153,8 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
           </Button>
         )}
       </div>
-      {def.help && <span id={helpId} className="hidden">{def.help}</span>}
+      {/* With the label hidden, a lone help icon would float under the card heading, so the help shows as text instead. */}
+      {def.help && <p id={helpId} className={labelHidden ? 'm-0 text-xs leading-4 text-muted-foreground' : 'hidden'}>{def.help}</p>}
       <div className="mt-1">{control}</div>
       {def.key && NUMERIC.includes(def.kind) && !isList && <KeySlider def={def} value={value as number} onCommit={commit} label={def.label} />}
       {failing.length > 0 && (

@@ -18,7 +18,7 @@ export function MilestoneChart({ result }: { result: ModelResult }) {
       <BarChart data={rows} barCategoryGap="24%">
         <CartesianGrid {...gridProps} />
         <XAxis dataKey="name" {...axisProps} />
-        <YAxis {...yAxisProps} width={48} domain={[0, 1]} tickFormatter={v => fmt.pct(v, 0)} />
+        <YAxis {...yAxisProps} width={48} domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={v => fmt.pct(v, 0)} />
         <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} content={<ChartTooltip format={v => fmt.pct(v)} />} />
         <Legend wrapperStyle={legendStyle} />
         {SERIES_DEFS.map(([key, name, color]) => (

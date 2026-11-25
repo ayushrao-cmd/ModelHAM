@@ -25,7 +25,7 @@ export function Build() {
         ]} />
         <Panel>
           <DataTable title="Uses of funds" description="₹ Cr, build period"
-            columns={[{ label: 'Use' }, { label: 'Net' }, { label: 'GST' }, { label: 'Total' }, { label: '% of total', format: n => fmt.pct(n) }]}
+            columns={[{ label: 'Use' }, { label: 'Net' }, { label: 'GST' }, { label: 'Total' }, { label: 'Share', format: n => fmt.pct(n) }]}
             rows={b.uses.map(u => [u.label, u.net, u.gst, u.net + u.gst, (u.net + u.gst) / b.totalUses])}
             total={['Total', net, gst, b.totalUses, 1]} />
         </Panel>
