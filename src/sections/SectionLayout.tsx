@@ -22,8 +22,7 @@ function HealthChip({ id }: { id: SectionId }) {
   const text = errors || warnings ? [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning')].filter(Boolean).join(', ')
     : mine.length === 1 ? 'Check passes' : `All ${mine.length} checks pass`
   return (
-    // ponytail: links to all of Health; a per-section filter arrives with the Health view
-    <a href={hrefFor('health')} className={cn('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors',
+    <a href={`${hrefFor('health')}?section=${id}`} className={cn('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors',
       tone === 'destructive' && 'border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15',
       tone === 'warning' && 'border-warning/40 bg-warning/10 text-warning hover:bg-warning/15',
       tone === 'success' && 'border-success/40 bg-success/10 text-success hover:bg-success/15')}>

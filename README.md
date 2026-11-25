@@ -45,6 +45,14 @@ Out of scope for this demo: IGAAP and IndAS statutory statements, balance sheet,
 CSR, mobilisation advance / short-term loan (a net-neutral pass-through to the EPC contractor in the
 workbook), early-completion bonus, Excel export, auth, backend, multi-user.
 
+Fixed by design: **Operate Years is 15** (the concession agreement period), shown read-only. The
+Completion Payment schedule (30 half-yearly installments), the repayment schedule (25 half-yearly
+repayments) and the O&M schedule are sized for it.
+
+**Construction Support (% of Bid)** sets the total support (% × Bid Price); the Support Tranches split
+it in proportion to their weights, landing each tranche in the first build month that reaches its
+physical progress. Weights need not sum to anything.
+
 ## Audit findings and their resolution
 
 | Audit finding | Resolution in app |

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +18,7 @@ import { Panel, SectionHeader } from './SectionLayout'
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const KEY_LABEL: Record<string, string> = { day: 'day', physical: 'physical', financial: 'financial', progress: 'progress', shareOfBid: 'share of bid' }
+const KEY_LABEL: Record<string, string> = { day: 'day', physical: 'physical', financial: 'financial', progress: 'progress', shareOfBid: 'weight' }
 
 /** One value as its field kind displays it. List elements are percentages, except milestone days and resurfacing years. */
 function show(f: FieldDef, v: unknown, key?: string): string {
@@ -57,15 +57,16 @@ export function diffInputs(a: Inputs, b: Inputs) {
 function ScenarioRow({ s, onDelete }: { s: Scenario; onDelete(s: Scenario): void }) {
   const { activeId, baseId, scenarios, setActive, setBase, createScenario, renameScenario } = useStore()
   const [editing, setEditing] = useState(false)
+  const cancelled = useRef(false) // Esc unmounts the input, and the browser blurs it on the way out: don't commit that blur
   const isActive = s.id === activeId, isBase = s.id === baseId
-  const commit = (v: string) => { renameScenario(s.id, v); setEditing(false) }
+  const commit = (v: string) => { if (!cancelled.current) renameScenario(s.id, v); setEditing(false) }
   return (
     <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {editing ? (
           <Input autoFocus defaultValue={s.name} aria-label={`Rename ${s.name}`} className="h-8 max-w-xs bg-card"
             onBlur={e => commit(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') setEditing(false) }} />
+            onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); if (e.key === 'Escape') { cancelled.current = true; setEditing(false) } }} />
         ) : <span className="truncate text-sm font-medium">{s.name}</span>}
         {isActive && <Badge variant="outline" className="shrink-0 rounded-full border-primary/40 bg-primary/10 font-medium text-foreground">Active</Badge>}
         {isBase && <Badge variant="outline" className="shrink-0 rounded-full font-medium">Base</Badge>}
@@ -73,7 +74,7 @@ function ScenarioRow({ s, onDelete }: { s: Scenario; onDelete(s: Scenario): void
       <div className="flex flex-wrap items-center gap-1">
         {!isActive && <Button size="sm" variant="outline" className="h-8" onClick={() => setActive(s.id)}>Open<span className="sr-only"> {s.name}</span></Button>}
         {!isBase && <Button size="sm" variant="ghost" className="h-8" onClick={() => setBase(s.id)} aria-label={`Make ${s.name} the base`}>Make base</Button>}
-        <Button size="icon" variant="ghost" className="size-8" title="Rename" aria-label={`Rename ${s.name}`} onClick={() => setEditing(true)}><Pencil aria-hidden="true" /></Button>
+        <Button size="icon" variant="ghost" className="size-8" title="Rename" aria-label={`Rename ${s.name}`} onClick={() => { cancelled.current = false; setEditing(true) }}><Pencil aria-hidden="true" /></Button>
         <Button size="icon" variant="ghost" className="size-8" title="Duplicate" aria-label={`Duplicate ${s.name}`}
           onClick={() => { createScenario(`${s.name} copy`, s.id); toast.success(`Duplicated ${s.name}`) }}><Copy aria-hidden="true" /></Button>
         <Button size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-destructive" title="Delete" aria-label={`Delete ${s.name}`}

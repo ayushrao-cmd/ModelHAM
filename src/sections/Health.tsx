@@ -27,20 +27,30 @@ export function flipSummary(prev: Map<string, boolean>, checks: Check[]): string
   return `${flipped.length} check${flipped.length === 1 ? '' : 's'} changed: ${named.join(', ')}${more}`
 }
 
-/** Mounted once in the shell: one toast per edit that flips any check. Switching scenarios is not an edit, so it resets the baseline. */
+const FLIP_SETTLE_MS = 800 // a burst of edits (typing) toasts once, this long after the last change
+
+/**
+ * Mounted once in the shell: one toast per settled burst of edits that flips any check, compared with the state before
+ * the burst, so partial values mid-typing don't toast. Switching scenarios is not an edit, so it resets the baseline.
+ */
 export function CheckFlipToasts() {
   const { checks } = useModel()
   const activeId = useStore(s => s.activeId)
-  const prev = useRef<{ activeId: string; pass: Map<string, boolean> } | null>(null)
+  const settled = useRef<{ activeId: string; pass: Map<string, boolean> } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
-    const p = prev.current
-    prev.current = { activeId, pass: new Map(checks.map(c => [c.id, c.pass])) }
-    if (!p || p.activeId !== activeId) return
-    const msg = flipSummary(p.pass, checks)
-    if (!msg) return
-    const worse = checks.some(c => p.pass.get(c.id) === true && !c.pass)
-    if (worse) toast.warning(msg); else toast.success(msg)
+    clearTimeout(timer.current)
+    const p = settled.current, now = { activeId, pass: new Map(checks.map(c => [c.id, c.pass])) }
+    if (!p || p.activeId !== activeId) { settled.current = now; return }
+    timer.current = setTimeout(() => {
+      settled.current = now
+      const msg = flipSummary(p.pass, checks)
+      if (!msg) return
+      const worse = checks.some(c => p.pass.get(c.id) === true && !c.pass)
+      if (worse) toast.warning(msg); else toast.success(msg)
+    }, FLIP_SETTLE_MS)
   }, [checks, activeId])
+  useEffect(() => () => clearTimeout(timer.current), [])
   return null
 }
 

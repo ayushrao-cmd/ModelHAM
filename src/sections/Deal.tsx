@@ -6,17 +6,21 @@ import { CheckCard, Panel, SectionLayout, Stats } from './SectionLayout'
 
 export function Deal() {
   const { active: r, checks } = useModel()
-  const { bidPrice: bid, authorityEstimate: ae, buildDays, operateYears } = r.inputs.deal
+  const { bidPrice: bid, authorityEstimate: ae, buildDays, operateYears, projectName, authorityName, lengthKm } = r.inputs.deal
   const vsAe = ae > 0 ? (bid - ae) / ae : null
   const check = (id: string) => checks.find(c => c.id === id)
   return (
     <SectionLayout id="deal"
-      strip={<Panel><Timeline timeline={r.timeline} /></Panel>}
+      strip={<Panel>
+        <p className="mb-4 text-sm"><span className="font-medium">{projectName}</span>
+          <span className="text-muted-foreground"> · {authorityName} · {fmt.num(lengthKm, 2)} km</span></p>
+        <Timeline timeline={r.timeline} />
+      </Panel>}
       inputs={<>{['Bid', 'Dates', 'Project'].map(g => <InputGroup key={g} section="deal" group={g} />)}</>}
       results={<>
         <Stats items={[
           { label: 'Bid vs Authority Estimate', value: vsAe == null ? '—' : `${vsAe > 0 ? '+' : ''}${fmt.pct(vsAe)}`,
-            sub: `${fmt.cr(bid)} bid against ${fmt.cr(ae)}` },
+            sub: `${fmt.cr(bid)} bid against ${fmt.cr(ae)}${lengthKm > 0 ? `; ${fmt.cr(bid / lengthKm)} per km over ${fmt.num(lengthKm, 2)} km` : ''}` },
           { label: 'Build period', value: `${fmt.num(buildDays, 0)} days`, sub: `${fmt.date(r.timeline.start)} to ${fmt.date(r.timeline.completion)}` },
           { label: 'Concession ends', value: fmt.date(r.timeline.end), sub: `After ${operateYears} years of operations` },
         ]} />

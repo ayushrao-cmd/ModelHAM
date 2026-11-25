@@ -28,13 +28,15 @@ export function exportSchedulesCsv(r: ModelResult): string {
   ]) + '\n'
 }
 
+const REVOKE_AFTER_MS = 5000 // some browsers read the blob URL after click() returns; revoking at 0 ms can cancel the download
+
 export function download(filename: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }))
   const a = Object.assign(document.createElement('a'), { href: url, download: filename })
   document.body.append(a)
   a.click()
   a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0) // after the click has started the download
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS)
 }
 
 /** "Base case (v2)" -> "base-case-v2" for file names. */

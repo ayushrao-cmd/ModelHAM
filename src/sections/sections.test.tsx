@@ -49,9 +49,9 @@ describe('sections', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Authority Estimate')))
   })
 
-  it('header links its health summary to Health', () => {
+  it('header links its health summary to Health, filtered to the section', () => {
     wrap(<Operations />)
     const chip = screen.getByRole('link', { name: /warning/ })
-    expect(chip.getAttribute('href')).toBe('#/health')
+    expect(chip.getAttribute('href')).toBe('#/health?section=operations')
   })
 })

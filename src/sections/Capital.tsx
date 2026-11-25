@@ -18,7 +18,7 @@ export function Capital() {
           { label: 'Construction Support', value: fmt.cr(b.support), sub: `Plus ${fmt.cr(b.supportGst)} GST` },
         ]} />
         <div className="grid gap-4 lg:grid-cols-2">
-          <CheckCard check={checks.find(c => c.id === 'solver-converged')} value={`${fmt.cr(b.idc)} IDC`} />
+          <CheckCard check={checks.find(c => c.id === 'solver-converged')} value={`${fmt.cr(b.idc)} Interest During Build`} />
           <Panel>
             <h2 className="text-[13px] font-medium text-muted-foreground">Debt Service Reserve</h2>
             <p className="mt-1 text-xl font-semibold tracking-tight tabular-nums">{fmt.cr(b.reserve)}</p>

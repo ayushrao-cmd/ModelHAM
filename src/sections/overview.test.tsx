@@ -1,10 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DEFAULT_INPUTS } from '../engine/defaults'
 import type { Check } from '../engine/health'
 import { useStore } from '../state/store'
-import { flipSummary, Health } from './Health'
+import { CheckFlipToasts, flipSummary, Health } from './Health'
 import { Overview } from './Overview'
 import { Returns } from './Returns'
 import { Scenarios } from './Scenarios'
@@ -15,7 +16,7 @@ const wrap = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvi
 const activeInputs = () => { const s = useStore.getState(); return s.scenarios.find(x => x.id === s.activeId)!.inputs }
 
 beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.location.hash = '' })
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Overview', () => {
   it('shows the calibrated equity IRR at defaults and no delta while the base is active', () => {
@@ -76,6 +77,23 @@ describe('Health', () => {
       .toBe('2 checks changed: Financing Tie-up now failing, Debt repaid now passing')
     expect(flipSummary(prev, [c('a', 'A', true), c('b', 'B', false), c('c', 'C', true)])).toBeNull()
   })
+
+  it('debounces flip toasts: a burst that ends where it started does not toast; a settled change toasts once', () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(toast, 'warning'), ok = vi.spyOn(toast, 'success')
+    const s = useStore.getState()
+    s.setActive(s.createScenario('Edit'))
+    render(<CheckFlipToasts />)
+    act(() => useStore.getState().setInput('deal.bidPrice', 1800)) // mid-typing value that fails DSCR
+    act(() => { vi.advanceTimersByTime(300) })
+    act(() => useStore.getState().setInput('deal.bidPrice', 2250))
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(warn).not.toHaveBeenCalled()
+    expect(ok).not.toHaveBeenCalled()
+    act(() => useStore.getState().setInput('deal.bidPrice', 1800))
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Scenarios', () => {
@@ -99,4 +117,16 @@ describe('Scenarios', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Make Alt the base' })) })
     expect(useStore.getState().baseId).toBe(id)
   })
+
+  it('Esc while renaming cancels without committing via blur', () => {
+    wrap(<Scenarios />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Base case' }))
+    const input = screen.getByRole('textbox', { name: 'Rename Base case' })
+    fireEvent.change(input, { target: { value: 'Typo' } })
+    // A browser blurs the input as Esc removes it: key and blur arrive before React re-renders.
+    act(() => { fireEvent.keyDown(input, { key: 'Escape' }); fireEvent.blur(input) })
+    expect(useStore.getState().scenarios[0].name).toBe('Base case')
+    expect(screen.queryByRole('textbox', { name: 'Rename Base case' })).toBeNull()
+  })
 })
+

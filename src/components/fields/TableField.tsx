@@ -4,7 +4,7 @@ import { NumberField } from './NumberField'
 interface Col { key: string; label: string; kind: FieldDef['kind'] }
 export const COLUMNS: Partial<Record<FieldDef['kind'], Col[]>> = {
   milestoneList: [{ key: 'day', label: 'Day', kind: 'days' }, { key: 'physical', label: 'Physical %', kind: 'percent' }, { key: 'financial', label: 'Financial %', kind: 'percent' }],
-  trancheList: [{ key: 'progress', label: 'Progress %', kind: 'percent' }, { key: 'shareOfBid', label: 'Share of bid %', kind: 'percent' }],
+  trancheList: [{ key: 'progress', label: 'Progress %', kind: 'percent' }, { key: 'shareOfBid', label: 'Weight', kind: 'percent' }],
 }
 
 /** Small row editor for milestone and tranche lists; each cell commits to `${id}.${row}.${key}`. */

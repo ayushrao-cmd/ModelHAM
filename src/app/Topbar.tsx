@@ -47,6 +47,13 @@ function ScenarioSwitcher() {
   )
 }
 
+/** The project the scenarios model, beside the switcher where there is room. */
+function ProjectName() {
+  const name = useStore(s => (s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0]).inputs.deal)
+  return <span className="hidden min-w-0 truncate text-sm text-muted-foreground xl:block" title={`${name.projectName} · ${name.authorityName}`}>
+    {name.projectName} · {name.authorityName}</span>
+}
+
 function HealthBadge() {
   const { score } = useModel()
   const { errors, warnings } = score
@@ -121,6 +128,7 @@ export function Topbar({ onMenu }: { onMenu(): void }) {
         <Menu aria-hidden="true" />
       </Button>
       <ScenarioSwitcher />
+      <ProjectName />
       <Badge variant="outline" className="shrink-0 whitespace-nowrap rounded-full border-warning/40 bg-warning/10 px-2 font-medium text-foreground sm:px-2.5">
         Demo data
       </Badge>
