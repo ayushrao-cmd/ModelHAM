@@ -1,0 +1,126 @@
+// Build period: monthly uses, Construction Support, equity/debt drawdown, IDC fixed point.
+import type { Day } from './dates'
+import { type Timeline, indexFactor } from './timeline'
+import type { Inputs } from './types'
+
+const DAYS_IN_YEAR = 365 // day count for IDC and performance-security commission
+const MAX_ITERATIONS = 50 // fixed-point cap (spec §7)
+const TOLERANCE = 0.01 // ₹ Cr, i.e. ₹1 lakh change in total debt
+
+export interface UseLine { key: string; label: string; net: number; gst: number }
+export interface BuildMonth { day: Day; epc: number; otherUses: number; gstPaid: number; idc: number; supportReceived: number;
+  supportGst: number; equityDraw: number; debtDraw: number; debtBalance: number; cumPhysical: number; cumCost: number; cumFunding: number }
+export interface BuildResult { months: BuildMonth[]; uses: UseLine[]; totalUses: number; support: number; supportGst: number;
+  equity: number; shareCapital: number; promoterDebt: number; debt: number; idc: number; reserve: number; workingCapital: number;
+  netGstCredit: number; converged: boolean; iterations: number }
+export interface FirstPeriod { debtService: (debt: number) => number; opex: number; interest: (debt: number) => number }
+
+/** A use line: net amount per month (sums to the line total) and its GST rate. */
+interface Line { key: string; label: string; gstRate: number; net: number[]; epc?: boolean }
+
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+const sCurve = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x)
+
+export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
+  const b = i.build, bid = i.deal.bidPrice, n = t.months.length
+  // Build days falling in each month (first and last months are partial).
+  const days = t.months.map((d, m) => Math.min(d, t.completion) - (m ? t.months[m - 1] + 1 : t.start) + 1)
+  const totalDays = sum(days)
+  let acc = 0
+  const elapsed = days.map(d => (acc += d))
+  const equated = days.map(d => d / totalDays)
+  const phys = b.phasing === 'equated' ? equated
+    : elapsed.map((e, m) => sCurve(e / totalDays) - sCurve(m ? elapsed[m - 1] / totalDays : 0))
+  acc = 0
+  const cumPhysical = phys.map(w => (acc += w))
+
+  // Construction Support: tranche k lands in the first month reaching its physical progress.
+  const supportBase = new Array<number>(n).fill(0), received = new Array<number>(n).fill(0)
+  for (const tr of i.support.tranches) {
+    const found = cumPhysical.findIndex(c => c >= tr.progress)
+    const k = found < 0 ? n - 1 : found // ponytail: float shortfall on a 100% tranche lands in the last month
+    supportBase[k] += tr.shareOfBid * bid
+    received[k] += tr.shareOfBid * bid * indexFactor(i, t.months[k])
+  }
+  const variable = received.map((r, m) => r - supportBase[m]) // indexation uplift paid through to the contractor
+  const supportGst = received.map(r => b.gstWorks * r)
+
+  const at = (k: number, x: number) => Array.from({ length: n }, (_, m) => (m === k ? x : 0))
+  const spread = (w: number[], x: number) => w.map(v => v * x)
+  const first = 0, secondLast = Math.max(0, n - 2), last = n - 1
+
+  const lines = (D: number, E: number): Line[] => [
+    { key: 'epcFixed', label: 'EPC (fixed price)', gstRate: b.gstWorks, net: spread(phys, b.epcFixed), epc: true },
+    { key: 'epcVariable', label: 'EPC (variable: indexation pass-through)', gstRate: b.gstWorks, net: variable, epc: true },
+    { key: 'ieFee', label: 'Independent Engineer fee', gstRate: b.gstServices, net: spread(equated, b.ieFeePctOfBid * bid) },
+    { key: 'admin', label: 'SPV administration', gstRate: 0, net: spread(equated, b.adminPctOfEpc * b.epcFixed) },
+    { key: 'perfSecurity', label: 'Performance-security commission', gstRate: 0,
+      net: spread(equated, b.perfSecurityCommissionPa * b.perfSecurityPctOfBid * bid * totalDays / DAYS_IN_YEAR) },
+    { key: 'patrolRental', label: 'Patrol vehicles (rental)', gstRate: b.gstServices, net: spread(equated, b.patrolRental) },
+    { key: 'patrolCapital', label: 'Patrol vehicles (capital)', gstRate: 0, net: at(secondLast, b.patrolCapital) },
+    { key: 'preBid', label: 'Pre-bid costs incl. miscellaneous allowance', gstRate: b.gstServices,
+      net: at(first, b.preBid * (1 + b.preBidMiscPct)) },
+    { key: 'spvFormation', label: 'SPV formation', gstRate: 0,
+      net: at(first, b.spvFormationPctOfShareCapital * E * i.capital.shareCapitalPct) },
+    { key: 'fundRaising', label: 'Fund-raising fee', gstRate: b.gstServices, net: at(first, b.fundRaisingPctOfDebt * D) },
+    { key: 'financeLegal', label: 'Finance & legal', gstRate: b.gstServices, net: at(first, b.financeLegal) },
+    { key: 'contingency', label: 'Contingency', gstRate: 0, net: at(last, b.contingency) },
+    { key: 'reserve', label: 'Debt Service Reserve', gstRate: 0, net: at(last, fp.debtService(D)) },
+    { key: 'workingCapital', label: 'Working capital to first payment', gstRate: 0, net: at(last, fp.opex + fp.interest(D)) },
+  ]
+
+  /** One pass over the months for a guessed debt D and equity E. */
+  const walk = (D: number, E: number) => {
+    const ls = lines(D, E)
+    const upfront = i.capital.upfrontEquityPct * E
+    // After upfront equity, the remaining equity and the debt are drawn pro rata, so draws total E : D.
+    const ratio = E - upfront + D > 0 ? (E - upfront) / (E - upfront + D) : 0
+    let balance = 0, carry = 0, eqCum = 0, cumCost = 0, cumFunding = 0
+    const months: BuildMonth[] = t.months.map((day, m) => {
+      const idc = balance * i.capital.buildRate * days[m] / DAYS_IN_YEAR
+      let epc = 0, otherUses = 0, gstPaid = 0
+      for (const l of ls) {
+        const gross = l.net[m] * (1 + l.gstRate)
+        if (l.epc) epc += gross; else otherUses += gross
+        gstPaid += l.net[m] * l.gstRate
+      }
+      const need = epc + otherUses + idc - received[m] - supportGst[m] - carry
+      const funding = Math.max(0, need)
+      carry = Math.max(0, -need) // surplus cash carries forward
+      const upfrontDraw = Math.min(funding, Math.max(0, upfront - eqCum))
+      const equityDraw = upfrontDraw + (funding - upfrontDraw) * ratio
+      const debtDraw = funding - equityDraw
+      eqCum += equityDraw
+      balance += debtDraw
+      cumCost += epc + otherUses + idc
+      cumFunding += received[m] + supportGst[m] + funding
+      return { day, epc, otherUses, gstPaid, idc, supportReceived: received[m], supportGst: supportGst[m], equityDraw, debtDraw,
+        debtBalance: balance, cumPhysical: cumPhysical[m], cumCost, cumFunding }
+    })
+    const idc = sum(months.map(m => m.idc))
+    const uses: UseLine[] = ls.map(l => ({ key: l.key, label: l.label, net: sum(l.net), gst: sum(l.net) * l.gstRate }))
+    uses.splice(uses.length - 2, 0, { key: 'idc', label: 'Interest During Build', net: idc, gst: 0 })
+    return { months, uses, idc }
+  }
+
+  const support = sum(received), supportGstTotal = sum(supportGst)
+  let D = 0, E = 0, iterations = 0, converged = false
+  let pass!: ReturnType<typeof walk>, totalUses = 0, needTotal = 0
+  while (iterations < MAX_ITERATIONS) {
+    pass = walk(D, E)
+    iterations++
+    totalUses = sum(pass.uses.map(u => u.net + u.gst))
+    needTotal = totalUses - support - supportGstTotal
+    const nextD = needTotal * (1 - i.capital.equityPct)
+    converged = Math.abs(nextD - D) < TOLERANCE
+    D = nextD
+    E = needTotal * i.capital.equityPct
+    if (converged) break
+  }
+
+  const use = (k: string) => pass.uses.find(u => u.key === k)!.net
+  const shareCapital = E * i.capital.shareCapitalPct
+  return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, equity: E, shareCapital,
+    promoterDebt: E - shareCapital, debt: D, idc: pass.idc, reserve: use('reserve'), workingCapital: use('workingCapital'),
+    netGstCredit: Math.max(0, sum(pass.months.map(m => m.gstPaid)) - supportGstTotal), converged, iterations }
+}
