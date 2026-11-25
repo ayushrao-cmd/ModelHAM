@@ -1,33 +1,21 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Component, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SectionId } from '../engine/types'
-import { parseHash, useRoute } from './router'
-import { sectionMeta } from './sections'
+import { Build } from '../sections/Build'
+import { Capital } from '../sections/Capital'
+import { Deal } from '../sections/Deal'
+import { Income } from '../sections/Income'
+import { Operations } from '../sections/Operations'
+import { SectionHeader } from '../sections/SectionLayout'
+import { useRoute } from './router'
 import { Brand, Sidebar, SidebarNav } from './Sidebar'
 import { ThemeToggle, Topbar } from './Topbar'
 
-/** Placeholder section body: real inputs and results arrive in later tasks. */
-function Section({ id }: { id: SectionId }) {
-  const s = sectionMeta(id)
-  const h1 = useRef<HTMLHeadingElement>(null)
-  // Move focus to the new heading on navigation so keyboard and screen-reader users land on the content.
-  useEffect(() => {
-    document.title = `${s.label} · Milestone`
-    if (parseHash(window.location.hash).focus) return // a jump: the named field takes focus instead
-    if (document.activeElement && document.activeElement !== document.body) h1.current?.focus({ preventScroll: true })
-  }, [s])
-  return (
-    <header className="max-w-2xl">
-      <h1 ref={h1} tabIndex={-1} className="text-2xl font-semibold tracking-tight focus:outline-none sm:text-[28px] sm:leading-9">
-        {s.label}
-      </h1>
-      <p className="mt-2 text-[15px] leading-6 text-muted-foreground">{s.description}</p>
-    </header>
-  )
-}
+// Overview, Returns, Health and Scenarios are header-only until Task 13.
+const VIEWS: Partial<Record<SectionId, () => JSX.Element>> = { deal: Deal, build: Build, capital: Capital, income: Income, operations: Operations }
 
 /** If a stored scenario ever crashes the engine, offer a way out instead of a blank page. */
 class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -52,6 +40,7 @@ class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
 export default function App() {
   const { section } = useRoute()
   const [menuOpen, setMenuOpen] = useState(false)
+  const View = VIEWS[section]
   return (
     <Recover>
       <TooltipProvider delayDuration={300}>
@@ -74,7 +63,7 @@ export default function App() {
         <div className="flex min-h-dvh min-w-0 flex-col lg:pl-60">
           <Topbar onMenu={() => setMenuOpen(true)} />
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none sm:px-6 sm:py-8 lg:px-8">
-            <Section id={section} />
+            {View ? <View key={section} /> : <SectionHeader key={section} id={section} />}
           </main>
         </div>
         <Toaster position="bottom-right" />
