@@ -36,7 +36,7 @@ export const FIELDS: FieldDef[] = [
   dates('deal.daysToAward', 'Days to Award', 'days', 'Days from bid date to award.', { min: 0, step: 5 }),
   dates('deal.daysToAgreement', 'Days to Agreement', 'days', 'Days from award to signing the concession agreement.', { min: 0, step: 5 }),
   dates('deal.daysToStart', 'Days to Start', 'days', 'Days from agreement to the Start Date (appointed date).', { min: 0, step: 5 }),
-  dates('deal.buildDays', 'Build Days', 'days', 'Construction period in days from Start Date to Completion Date.', { min: 1, step: 30 }),
+  dates('deal.buildDays', 'Build Days', 'days', 'Construction period in days from Start Date to Completion Date (at least a year).', { min: 365, step: 30 }),
   dates('deal.operateYears', 'Operate Years', 'years', 'Operations period in years after completion.', { min: 1, max: 30, step: 1 }),
   bid('deal.pavement', 'Pavement Type', 'select', 'Sets the maintenance payment in the year before resurfacing.',
     { options: [{ value: 'flexible', label: 'Flexible' }, { value: 'flexiblePerpetual', label: 'Flexible perpetual' }] }),
