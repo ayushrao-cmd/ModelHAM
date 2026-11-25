@@ -9,8 +9,9 @@ export const npv = (rate: number, flows: Flow[]): number => {
   return flows.reduce((s, f) => s + f.amount / Math.pow(1 + rate, (f.day - d0) / 365), 0)
 }
 
-/** XIRR: Newton from 0.1, bisection fallback on [-0.99, 10]; null if no sign change / no root. */
+/** XIRR: Newton from 0.1, bisection fallback on [-0.99, 10]; null if any flow is non-finite, no sign change or no root. */
 export const xirr = (flows: Flow[]): number | null => {
+  if (flows.some((f) => !Number.isFinite(f.amount) || !Number.isFinite(f.day))) return null
   if (!flows.some((f) => f.amount > 0) || !flows.some((f) => f.amount < 0)) return null
   const d0 = flows[0].day
   const f = (r: number) => npv(r, flows)

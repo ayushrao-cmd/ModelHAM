@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_INPUTS as i } from './defaults'
 import { buildTimeline, indexFactor } from './timeline'
-import { runBuild } from './build'
+import { setAt } from '../lib/path'
+import { runBuild, supportSchedule } from './build'
 
 const firstPeriod = { debtService: (d: number) => d * 0.07, opex: 7, interest: (d: number) => d * 0.0475 }
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+/** A tranche's share of bid: Construction Support % split by weight. */
+const weightShare = (tr: { shareOfBid: number }) => i.support.pctOfBid * tr.shareOfBid / sum(i.support.tranches.map(x => x.shareOfBid))
 
 describe('runBuild (defaults)', () => {
   const t = buildTimeline(i)
@@ -15,7 +18,7 @@ describe('runBuild (defaults)', () => {
     const variable = line('epcVariable')
     const landing = i.support.tranches.map(tr => r.months.findIndex(m => m.cumPhysical >= tr.progress))
     const expectedVar = sum(i.support.tranches.map((tr, k) =>
-      tr.shareOfBid * i.deal.bidPrice * (indexFactor(i, t.months[landing[k]]) - 1)))
+      weightShare(tr) * i.deal.bidPrice * (indexFactor(i, t.months[landing[k]]) - 1)))
     expect(variable.net).toBeCloseTo(expectedVar, 6)
     expect(variable.net).toBeGreaterThan(0)
     expect(r.epcVariable).toBeCloseTo(expectedVar, 6)
@@ -23,7 +26,7 @@ describe('runBuild (defaults)', () => {
     expect(sum(r.months.map(m => m.epc))).toBeCloseTo(
       i.build.epcFixed * (1 + i.build.gstWorks) + variable.net * (1 + i.build.gstWorks), 6)
     // pass-through: indexation uplift is inside support received
-    const base = sum(i.support.tranches.map(tr => tr.shareOfBid * i.deal.bidPrice))
+    const base = i.support.pctOfBid * i.deal.bidPrice
     expect(sum(r.months.map(m => m.supportReceived))).toBeCloseTo(base + variable.net, 6)
     expect(r.support).toBeCloseTo(base + variable.net, 6)
   })
@@ -87,3 +90,38 @@ describe('runBuild (defaults)', () => {
     expect(line('preBid').label).toBe('Pre-bid costs incl. miscellaneous allowance')
   })
 })
+
+describe('runBuild equity share extremes', () => {
+  const t = buildTimeline(i)
+  it.each([[1], [0]])('equityPct %s: monthly draws reconcile to reported debt and equity', eq => {
+    const r = runBuild(setAt(i, 'capital.equityPct', eq), t, firstPeriod)
+    expect(r.converged).toBe(true)
+    expect(r.iterations).toBeGreaterThanOrEqual(2)
+    expect(Math.abs(sum(r.months.map(m => m.debtDraw)) - r.debt)).toBeLessThan(0.01)
+    expect(Math.abs(sum(r.months.map(m => m.equityDraw)) - r.equity)).toBeLessThan(0.01)
+    if (eq === 1) { expect(r.debt).toBeCloseTo(0, 6); expect(r.idc).toBeCloseTo(0, 6) }
+    else expect(r.equity).toBeCloseTo(0, 6)
+  })
+})
+
+describe('Construction Support (% of Bid) and tranche weights', () => {
+  const t = buildTimeline(i)
+  it('tranches split pctOfBid × bid by weight, so the % moves the model', () => {
+    const r = supportSchedule(i, t)
+    const lower = supportSchedule(setAt(i, 'support.pctOfBid', 0.3), t)
+    expect(sum(lower.received)).toBeCloseTo(sum(r.received) * 0.75, 6)
+    // weights are relative: doubling every weight changes nothing
+    const doubled = setAt(i, 'support.tranches', i.support.tranches.map(tr => ({ ...tr, shareOfBid: tr.shareOfBid * 2 })))
+    expect(sum(supportSchedule(doubled, t).received)).toBeCloseTo(sum(r.received), 6)
+    expect(runBuild(setAt(i, 'support.pctOfBid', 0.3), t, firstPeriod).support).toBeLessThan(runBuild(i, t, firstPeriod).support)
+  })
+})
+
+describe('runBuild with no build months', () => {
+  it('returns an empty schedule instead of throwing', () => {
+    const x = setAt(i, 'deal.buildDays', -30)
+    const r = runBuild(x, buildTimeline(x), firstPeriod)
+    expect(r.months).toEqual([])
+  })
+})
+

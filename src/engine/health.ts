@@ -2,7 +2,7 @@
 import { FIELDS } from '../fields'
 import { fmt } from '../lib/format'
 import { getAt } from '../lib/path'
-import { addMonths, toDay, toIso } from './dates'
+import { addMonths, isIsoDate, toDay } from './dates'
 import type { ModelResult } from './model'
 import type { FieldDef, Inputs, SectionId } from './types'
 
@@ -11,6 +11,7 @@ export interface Check { id: string; title: string; section: SectionId; fieldId?
 
 const SUM_TOL = 1e-6 // schedules must total 100% to within float residue
 const MONEY_TOL = 0.005 // ₹ Cr; below this an amount displays as ₹0.00 Cr
+const RECON_TOL = 0.01 // ₹ Cr; the debt / Interest During Build fixed point converges to this
 const RATIO_TOL = 1e-9 // float residue on leverage (defaults sit exactly at 3.0×)
 export const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
 const TIEUP_SHARE = 0.9 // financing tie-up: 90% of (Authority Estimate − Construction Support)
@@ -24,7 +25,6 @@ const PERIODS_PER_YEAR = 2 // half-yearly payments (matches operations)
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const check = (id: string, title: string, section: SectionId, severity: Severity, pass: boolean, message: string,
   fieldId?: string): Check => ({ id, title, section, severity, pass, message, ...(fieldId ? { fieldId } : {}) })
-const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && toIso(toDay(s)) === s
 
 const NUMERIC: FieldDef['kind'][] = ['money', 'percent', 'days', 'years', 'number']
 function show(kind: FieldDef['kind'], n: number) {
@@ -83,13 +83,15 @@ export function validateInputs(i: Inputs): Check[] {
     return check(id, title, section, 'error', sumOk && lengthOk, msg, fieldId)
   }
 
+  // Tranche weights split Construction Support (pctOfBid × bid); they need not sum to anything.
   const { tranches, pctOfBid } = i.support
-  const shares = sum(tranches.map(t => t.shareOfBid))
+  const badWeight = tranches.findIndex(t => !(t.shareOfBid > 0))
   const badProgress = tranches.findIndex((t, k) => !(t.progress > 0 && t.progress <= 1) || (k > 0 && t.progress <= tranches[k - 1].progress))
-  const trancheMsg = Math.abs(shares - pctOfBid) > SUM_TOL
-    ? `Tranche shares total ${fmt.pct(shares)} of bid but Construction Support is ${fmt.pct(pctOfBid)}.`
-    : badProgress >= 0 ? `Tranche ${badProgress + 1} progress ${fmt.pct(tranches[badProgress].progress)} must be above the previous tranche and at most 100%.`
-    : `Tranche shares total ${fmt.pct(shares)} of bid, matching Construction Support.`
+  const trancheMsg = !tranches.length ? `No tranches: Construction Support of ${fmt.pct(pctOfBid)} of bid has nowhere to land.`
+    : badWeight >= 0 ? `Tranche ${badWeight + 1} weight ${fmt.pct(tranches[badWeight].shareOfBid)} must be above zero.`
+    : badProgress >= 0 ? `Tranche ${badProgress + 1} progress ${fmt.pct(tranches[badProgress].progress)} must be above 0%, above the previous tranche and at most 100%.`
+    : `${tranches.length} tranches split Construction Support of ${fmt.pct(pctOfBid)} of bid by weight, in ascending progress.`
+  const tranchesOk = (tranches.length > 0 || pctOfBid === 0) && badWeight < 0 && badProgress < 0
 
   const [r1, r2] = i.operations.resurfacingYears, Y = i.deal.operateYears
   const resurfacingOk = Number.isInteger(r1) && Number.isInteger(r2) && r1 >= 1 && r2 > r1 + RESURFACING_GAP && r2 < Y
@@ -113,8 +115,7 @@ export function validateInputs(i: Inputs): Check[] {
       i.capital.repayment.length <= periods, `debt must be repaid within the ${periods} payments`),
     schedule('installment-sum', 'Completion Payment Schedule', 'income', 'income.installments', i.income.installments,
       i.income.installments.length === periods, `it needs exactly ${periods} (${PERIODS_PER_YEAR} × ${Y} operate years)`),
-    check('tranche-sum', 'Support tranches match Construction Support', 'capital', 'error',
-      Math.abs(shares - pctOfBid) <= SUM_TOL && badProgress < 0, trancheMsg, 'support.tranches'),
+    check('tranche-sum', 'Support tranches valid', 'capital', 'error', tranchesOk, trancheMsg, 'support.tranches'),
     check('resurfacing-order', 'Resurfacing years in order', 'operations', 'error', resurfacingOk, resurfacingMsg, 'operations.resurfacingYears'),
     check('dates-order', 'Rate quote on or before bid date', 'income', 'error', datesValid && quote <= bid,
       datesValid ? `Rate quote ${fmt.date(quote)} ${quote <= bid ? 'is on or before' : 'is after'} the bid date ${fmt.date(bid)}.`
@@ -139,12 +140,18 @@ export function runChecks(r: ModelResult): Check[] {
   out.push(check('financing-tieup', 'Financing Tie-up Test', 'deal', 'error', tied >= threshold,
     `Debt + equity ${fmt.cr(tied)} ${tied >= threshold ? 'meets' : 'is below'} the tie-up threshold ${fmt.cr(threshold)}.`, 'deal.bidPrice'))
 
-  // Build milestones, measured at the month containing each milestone day (the build grid is monthly).
+  // An empty build grid (completion before start, or an unusable date) fails here; the milestone checks need months.
   const months = b.months
+  out.push(check('build-period', 'Build period has months', 'deal', 'error', months.length > 0,
+    months.length ? `The build runs ${months.length} months, ${fmt.date(t.start)} to ${fmt.date(t.completion)}.`
+      : `There are no build months: Build Days is ${fmt.num(i.deal.buildDays, 0)}, so construction never runs. Build-period checks are skipped.`,
+    'deal.buildDays'))
+
+  // Build milestones, measured at the month containing each milestone day (the build grid is monthly).
   const epcTotal = sum(months.map(m => m.epc))
   let acc = 0
   const financial = months.map(m => (acc += m.epc) / epcTotal) // financial progress = cumulative EPC spend share
-  i.milestones.forEach((ms, n) => {
+  if (months.length) i.milestones.forEach((ms, n) => {
     const found = months.findIndex(m => m.day >= t.start + ms.day - 1)
     const m = found < 0 ? months.length - 1 : found
     const mo = months[m], phys = mo.cumPhysical, fin = financial[m]
@@ -186,13 +193,24 @@ export function runChecks(r: ModelResult): Check[] {
     `Debt / equity ${fmt.x(k.leverage)} is ${k.leverage <= i.capital.maxLeverage + RATIO_TOL ? 'within' : 'above'} the ${fmt.x(i.capital.maxLeverage)} limit.`,
     'capital.equityPct'))
 
-  // Sources = Uses; negative debt/equity means Construction Support exceeds costs (very high bids).
+  // Sources = Uses, reconciled independently: reported totals, the monthly draws behind debt and equity, and
+  // the monthly cash (funding vs cost by completion). Negative debt/equity means Construction Support exceeds costs.
   const sources = b.support + b.supportGst + b.debt + b.equity
-  const gap = sources - b.totalUses
   const negative = !(b.debt >= 0 && b.equity >= 0)
   const negMsg = `Debt ${fmt.cr(b.debt)} and equity ${fmt.cr(b.equity)} must not be negative: Construction Support exceeds build costs.`
-  out.push(check('sources-uses', 'Sources = Uses', 'capital', 'error', Math.abs(gap) <= MONEY_TOL && !negative,
-    negative ? negMsg : `Sources ${fmt.cr(sources)} ${Math.abs(gap) <= MONEY_TOL ? 'equal' : 'differ from'} uses ${fmt.cr(b.totalUses)}${Math.abs(gap) <= MONEY_TOL ? '' : ` by ${fmt.cr(gap)}`}.`,
+  const end = months[months.length - 1]
+  const recon: [string, number, number][] = [
+    ['Monthly equity draws', sum(months.map(m => m.equityDraw)), b.equity],
+    ['Monthly debt draws', sum(months.map(m => m.debtDraw)), b.debt],
+    ['Funding by completion', end?.cumFunding ?? 0, end?.cumCost ?? 0],
+    ['Sources', sources, b.totalUses],
+  ]
+  const against = ['reported equity', 'reported debt', 'cost by completion', 'uses']
+  const off = recon.findIndex(([, a, c]) => !(Math.abs(a - c) <= RECON_TOL))
+  out.push(check('sources-uses', 'Sources = Uses', 'capital', 'error', off < 0 && !negative,
+    negative ? negMsg : off >= 0
+      ? `${recon[off][0]} ${fmt.cr(recon[off][1])} differ from ${against[off]} ${fmt.cr(recon[off][2])} by ${fmt.cr(recon[off][1] - recon[off][2])}.`
+      : `Sources ${fmt.cr(sources)} equal uses ${fmt.cr(b.totalUses)}; monthly equity and debt draws and build cash reconcile.`,
     'deal.bidPrice'))
   const badMonth = months.find(m => !(m.equityDraw >= -MONEY_TOL && m.debtDraw >= -MONEY_TOL && m.debtBalance >= -MONEY_TOL))
   out.push(check('build-cash', 'Build cash never negative', 'capital', 'error', !negative && !badMonth,

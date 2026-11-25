@@ -38,7 +38,7 @@ describe('health at defaults', () => {
   it('milestone funding excess is reported with its amount, never clipped', () => {
     const f2 = find(cs, 'milestone-funding-2')
     expect(f2).toMatchObject({ severity: 'warning', pass: false, fieldId: 'support.tranches' })
-    expect(f2.message).toContain('₹45.45 Cr')
+    expect(f2.message).toContain('₹45.42 Cr')
     expect(find(cs, 'milestone-funding-3').pass).toBe(true)
   })
 
@@ -142,12 +142,18 @@ describe('field validation and cross-field rules', () => {
     expect(r([6, 16]).pass).toBe(false)
     expect(r([6, 12]).pass).toBe(true)
   })
-  it('tranche-sum: shares must total Construction Support %, progress ≤ 100% and ascending', () => {
+  it('tranche-sum: weights positive, progress in (0, 100%] and strictly ascending; no sum rule', () => {
     const t = (i: Inputs) => find(validateInputs(i), 'tranche-sum')
     expect(t(D).pass).toBe(true)
-    expect(t(setAt(D, 'support.pctOfBid', 0.35)).pass).toBe(false)
+    expect(t(setAt(D, 'support.pctOfBid', 0.35)).pass).toBe(true) // weights need not sum to the %
+    expect(t(setAt(D, 'support.tranches.3.shareOfBid', 0)).pass).toBe(false)
     expect(t(setAt(D, 'support.tranches.9.progress', 1.2)).pass).toBe(false)
-    expect(t(setAt(D, 'support.tranches.1.progress', 0.01)).pass).toBe(false)
+    expect(t(setAt(D, 'support.tranches.0.progress', 0)).pass).toBe(false)
+    expect(t(setAt(D, 'support.tranches.1.progress', 0.05)).pass).toBe(false) // equal to previous
+  })
+  it('operate years is fixed at 15', () => {
+    expect(find(validateInputs(setAt(D, 'deal.operateYears', 20)), 'field:deal.operateYears').pass).toBe(false)
+    expect(find(validateInputs(D), 'field:deal.operateYears').pass).toBe(true)
   })
   it('milestone list must be ascending and within build days', () => {
     expect(find(validateInputs(setAt(D, 'milestones.1.day', 200)), 'field:milestones').pass).toBe(false)
@@ -212,4 +218,30 @@ describe('every failing check with a fieldId resolves', () => {
     for (const i of cases) for (const c of failing(checks(i))) if (c.fieldId) { n++; expect(fieldById(c.fieldId), c.id).toBeDefined() }
     expect(n).toBeGreaterThan(10)
   })
+  it('sources-uses reconciles monthly draws: a corrupted debt figure fails with amounts', () => {
+    const r = runModel(D)
+    expect(find(runChecks(r), 'sources-uses').pass).toBe(true)
+    const c = find(runChecks({ ...r, build: { ...r.build, debt: r.build.debt + 10 } }), 'sources-uses')
+    expect(c.pass).toBe(false)
+    expect(c.message).toMatch(/debt/i)
+    expect(c.message).toContain('₹10.00 Cr')
+    const e = find(runChecks({ ...r, build: { ...r.build, months: r.build.months.map((m, k) => (k ? m : { ...m, equityDraw: m.equityDraw + 5 })) } }), 'sources-uses')
+    expect(e.pass).toBe(false)
+    expect(e.message).toMatch(/equity/i)
+  })
 })
+
+describe('no build months', () => {
+  it.each([['Build Days −30', setAt(D, 'deal.buildDays', -30)], ['Build Days 0', setAt(D, 'deal.buildDays', 0)]])(
+    '%s: checks run without throwing and fail with a clear message', (_, i) => {
+      const cs = checks(i)
+      expect(find(cs, 'field:deal.buildDays').pass).toBe(false)
+      const b = find(cs, 'build-period')
+      expect(b).toMatchObject({ pass: false, severity: 'error', fieldId: 'deal.buildDays' })
+      expect(b.message).toMatch(/no build months/i)
+    })
+  it('at defaults the build-period check passes', () => {
+    expect(find(checks(D), 'build-period').pass).toBe(true)
+  })
+})
+

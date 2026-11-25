@@ -37,13 +37,15 @@ export function supportSchedule(i: Inputs, t: Timeline) {
   acc = 0
   const cumPhysical = phys.map(w => (acc += w))
 
-  // Construction Support: tranche k lands in the first month reaching its physical progress.
+  // Construction Support: pctOfBid × bid split across tranches by weight; tranche k lands in the first month reaching its progress.
   const supportBase = new Array<number>(n).fill(0), received = new Array<number>(n).fill(0)
-  for (const tr of i.support.tranches) {
+  const weights = sum(i.support.tranches.map(tr => tr.shareOfBid))
+  for (const tr of n && weights > 0 ? i.support.tranches : []) {
     const found = cumPhysical.findIndex(c => c >= tr.progress)
     const k = found < 0 ? n - 1 : found // ponytail: float shortfall on a 100% tranche lands in the last month
-    supportBase[k] += tr.shareOfBid * bid
-    received[k] += tr.shareOfBid * bid * indexFactor(i, t.months[k])
+    const amount = i.support.pctOfBid * bid * tr.shareOfBid / weights
+    supportBase[k] += amount
+    received[k] += amount * indexFactor(i, t.months[k])
   }
   const variable = received.map((r, m) => r - supportBase[m]) // indexation uplift paid through to the contractor
   return { days, totalDays, equated, phys, cumPhysical, received, variable }
@@ -63,7 +65,7 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     { key: 'epcVariable', label: 'EPC (variable: indexation pass-through)', gstRate: b.gstWorks, net: variable, epc: true },
     { key: 'ieFee', label: 'Independent Engineer fee', gstRate: b.gstServices, net: spread(equated, b.ieFeePctOfBid * bid) },
     { key: 'admin', label: 'SPV administration', gstRate: 0, net: spread(equated, b.adminPctOfEpc * b.epcFixed) },
-    { key: 'perfSecurity', label: 'Performance-security commission', gstRate: 0,
+    { key: 'perfSecurity', label: 'Performance-security commission', gstRate: b.gstServices,
       net: spread(equated, b.perfSecurityCommissionPa * b.perfSecurityPctOfBid * bid * totalDays / DAYS_IN_YEAR) },
     { key: 'patrolRental', label: 'Patrol vehicles (rental)', gstRate: b.gstServices, net: spread(equated, b.patrolRental) },
     { key: 'patrolCapital', label: 'Patrol vehicles (capital)', gstRate: 0, net: at(secondLast, b.patrolCapital) },
@@ -75,7 +77,7 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     { key: 'financeLegal', label: 'Finance & legal', gstRate: b.gstServices, net: at(first, b.financeLegal) },
     { key: 'contingency', label: 'Contingency', gstRate: 0, net: at(last, b.contingency) },
     { key: 'reserve', label: 'Debt Service Reserve', gstRate: 0, net: at(last, fp.debtService(D)) },
-    { key: 'workingCapital', label: 'Working capital to first payment', gstRate: 0, net: at(last, fp.opex + fp.interest(D)) },
+    { key: 'workingCapital', label: 'Working capital (liquidity buffer to first payment, released at concession end)', gstRate: 0, net: at(last, fp.opex + fp.interest(D)) },
   ]
 
   /** One pass over the months for a guessed debt D and equity E. */
@@ -83,7 +85,9 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     const ls = lines(D, E)
     const upfront = i.capital.upfrontEquityPct * E
     // After upfront equity, the remaining equity and the debt are drawn pro rata, so draws total E : D.
-    const ratio = E - upfront + D > 0 ? (E - upfront) / (E - upfront + D) : 0
+    // With no debt (D = 0, E = upfront) everything is equity; the first guess (D = E = 0) draws debt only.
+    const rest = E - upfront + D
+    const ratio = rest > 0 ? (E - upfront) / rest : E > 0 ? 1 : 0
     let balance = 0, carry = 0, eqCum = 0, cumCost = 0, cumFunding = 0
     const months: BuildMonth[] = t.months.map((day, m) => {
       const idc = balance * i.capital.buildRate * days[m] / DAYS_IN_YEAR
@@ -120,10 +124,11 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     iterations++
     totalUses = sum(pass.uses.map(u => u.net + u.gst))
     needTotal = totalUses - support - supportGstTotal
-    const nextD = needTotal * (1 - i.capital.equityPct)
-    converged = Math.abs(nextD - D) < TOLERANCE
+    const nextD = needTotal * (1 - i.capital.equityPct), nextE = needTotal * i.capital.equityPct
+    // Two passes at least: the first runs on a guess (D = E = 0), so its draw split is not the reported one.
+    converged = iterations >= 2 && Math.abs(nextD - D) < TOLERANCE && Math.abs(nextE - E) < TOLERANCE
     D = nextD
-    E = needTotal * i.capital.equityPct
+    E = nextE
     if (converged) break
   }
 

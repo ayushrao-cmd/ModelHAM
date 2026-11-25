@@ -14,4 +14,10 @@ describe('finance', () => {
   it('npv at irr is zero', () => {
     expect(npv(0.1, [{ day: 0, amount: -100 }, { day: 365, amount: 110 }])).toBeCloseTo(0, 6)
   })
+  it('xirr null when any flow amount or day is non-finite', () => {
+    const ok = [{ day: 0, amount: -100 }, { day: 365, amount: 110 }]
+    expect(xirr([...ok, { day: 400, amount: NaN }])).toBeNull()
+    expect(xirr([...ok, { day: NaN, amount: 5 }])).toBeNull()
+    expect(xirr([...ok, { day: 400, amount: Infinity }])).toBeNull()
+  })
 })
