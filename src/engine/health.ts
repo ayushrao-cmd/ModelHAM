@@ -12,7 +12,7 @@ export interface Check { id: string; title: string; section: SectionId; fieldId?
 const SUM_TOL = 1e-6 // schedules must total 100% to within float residue
 const MONEY_TOL = 0.005 // ₹ Cr; below this an amount displays as ₹0.00 Cr
 const RATIO_TOL = 1e-9 // float residue on leverage (defaults sit exactly at 3.0×)
-const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
+export const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
 const TIEUP_SHARE = 0.9 // financing tie-up: 90% of (Authority Estimate − Construction Support)
 const APS_FREE_PTS = 10 // no Additional Performance Security up to 10 points below the estimate
 const APS_SLAB2_PTS = 20 // second slab starts 20 points below

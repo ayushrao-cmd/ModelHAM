@@ -34,6 +34,10 @@
     --input: 220 13% 84%;
     --ring: 243 75% 59%;
     --shadow: 222 47% 11%;
+    --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; --viz-6: #008300;
+    --viz-7: #6250d6; --viz-8: #e34948;   /* dataviz categorical slots, fixed order */
+    --viz-neutral: #8a8f9b;               /* "Other" */
+    --viz-good: #15803d; --viz-bad: #cb2121;
     --radius: 0.75rem;                  /* 12px cards; md 10px controls; sm 6px chips */
   }
 
@@ -63,6 +67,10 @@
     --input: 224 14% 25%;
     --ring: 234 89% 74%;
     --shadow: 0 0% 0%;
+    --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-6: #0ca30c;
+    --viz-7: #9085e9; --viz-8: #e66767;
+    --viz-neutral: #7b8190;
+    --viz-good: #4acb7c; --viz-bad: #f47575;
   }
 
   * { @apply border-border; }
