@@ -7,6 +7,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useStore } from '../state/store'
 import { useModel } from '../state/useModel'
+import { CommandPalette } from './CommandPalette'
 import { hrefFor } from './router'
 import { useTheme } from './theme'
 
@@ -99,7 +100,7 @@ export function Topbar({ onMenu }: { onMenu(): void }) {
         Demo data
       </Badge>
       <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {/* ⌘K command palette trigger slot (Task 10). */}
+        <CommandPalette />
         <HealthBadge />
         <ExportMenu />
         {/* Below sm the toggle lives in the sections drawer, leaving room for the scenario name. */}

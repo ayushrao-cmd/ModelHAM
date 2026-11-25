@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SectionId } from '../engine/types'
-import { useRoute } from './router'
+import { parseHash, useRoute } from './router'
 import { sectionMeta } from './sections'
 import { Brand, Sidebar, SidebarNav } from './Sidebar'
 import { ThemeToggle, Topbar } from './Topbar'
@@ -16,6 +16,7 @@ function Section({ id }: { id: SectionId }) {
   // Move focus to the new heading on navigation so keyboard and screen-reader users land on the content.
   useEffect(() => {
     document.title = `${s.label} · Milestone`
+    if (parseHash(window.location.hash).focus) return // a jump: the named field takes focus instead
     if (document.activeElement && document.activeElement !== document.body) h1.current?.focus({ preventScroll: true })
   }, [s])
   return (

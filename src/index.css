@@ -87,3 +87,13 @@
     }
   }
 }
+
+/* Jump-to-field: a brief ring so the eye finds the focused field. None under reduced motion. */
+@layer utilities {
+  @keyframes field-flash {
+    0%, 55% { box-shadow: 0 0 0 4px hsl(var(--card)), 0 0 0 6px hsl(var(--ring) / 0.7); }
+    100% { box-shadow: 0 0 0 4px hsl(var(--card) / 0), 0 0 0 6px hsl(var(--ring) / 0); }
+  }
+  .field-flash { animation: field-flash 1.4s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .field-flash { animation: none; } }
+}
