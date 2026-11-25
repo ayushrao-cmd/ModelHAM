@@ -6,5 +6,6 @@ export function getAt(obj: object, path: string): unknown {
 export function setAt<T>(obj: T, path: string, value: unknown): T {
   const [head, ...rest] = path.split('.')
   const o = obj as Record<string, unknown>
-  return { ...o, [head]: rest.length ? setAt(o[head] as object, rest.join('.'), value) : value } as T
+  const copy = Array.isArray(o) ? [...o] : { ...o }
+  return Object.assign(copy, { [head]: rest.length ? setAt(o[head] as object, rest.join('.'), value) : value }) as T
 }

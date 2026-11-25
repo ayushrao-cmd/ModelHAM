@@ -24,5 +24,5 @@ export interface Inputs {
   targets: { equityIrrHurdle: number }
 }
 export interface FieldDef { id: string; label: string; section: SectionId;
-  group: string; kind: 'money'|'percent'|'days'|'years'|'number'|'date'|'text'|'select'|'percentList'; min?: number; max?: number;
+  group: string; kind: 'money'|'percent'|'days'|'years'|'number'|'date'|'text'|'select'|'percentList'|'milestoneList'|'trancheList'; min?: number; max?: number;
   step?: number; help?: string; options?: { value: string; label: string }[]; key?: boolean }
