@@ -18,6 +18,7 @@ describe('runBuild (defaults)', () => {
       tr.shareOfBid * i.deal.bidPrice * (indexFactor(i, t.months[landing[k]]) - 1)))
     expect(variable.net).toBeCloseTo(expectedVar, 6)
     expect(variable.net).toBeGreaterThan(0)
+    expect(r.epcVariable).toBeCloseTo(expectedVar, 6)
     // variable EPC carries works GST like the fixed EPC
     expect(sum(r.months.map(m => m.epc))).toBeCloseTo(
       i.build.epcFixed * (1 + i.build.gstWorks) + variable.net * (1 + i.build.gstWorks), 6)

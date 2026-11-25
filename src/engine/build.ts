@@ -11,6 +11,7 @@ export interface UseLine { key: string; label: string; net: number; gst: number 
 export interface BuildMonth { day: Day; epc: number; otherUses: number; gstPaid: number; idc: number; supportReceived: number;
   supportGst: number; equityDraw: number; debtDraw: number; debtBalance: number; cumPhysical: number; cumCost: number; cumFunding: number }
 export interface BuildResult { months: BuildMonth[]; uses: UseLine[]; totalUses: number; support: number; supportGst: number;
+  epcVariable: number; // Σ variable EPC (indexation pass-through), net of GST
   equity: number; shareCapital: number; promoterDebt: number; debt: number; idc: number; reserve: number; workingCapital: number;
   netGstCredit: number; converged: boolean; iterations: number }
 export interface FirstPeriod { debtService: (debt: number) => number; opex: number; interest: (debt: number) => number }
@@ -120,7 +121,8 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
 
   const use = (k: string) => pass.uses.find(u => u.key === k)!.net
   const shareCapital = E * i.capital.shareCapitalPct
-  return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, equity: E, shareCapital,
+  return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, epcVariable: use('epcVariable'),
+    equity: E, shareCapital,
     promoterDebt: E - shareCapital, debt: D, idc: pass.idc, reserve: use('reserve'), workingCapital: use('workingCapital'),
     netGstCredit: Math.max(0, sum(pass.months.map(m => m.gstPaid)) - supportGstTotal), converged, iterations }
 }
