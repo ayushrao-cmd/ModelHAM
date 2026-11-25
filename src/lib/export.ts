@@ -41,3 +41,17 @@ export function download(filename: string, text: string, type: string) {
 
 /** "Base case (v2)" -> "base-case-v2" for file names. */
 export const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'scenario'
+
+/** Copy text to the clipboard, falling back to execCommand. True on success. */
+export async function copy(text: string) {
+  try { await navigator.clipboard.writeText(text); return true } catch { /* no clipboard API or permission: fall back */ }
+  const ta = Object.assign(document.createElement('textarea'), { value: text })
+  ta.setAttribute('readonly', '')
+  ta.style.cssText = 'position:fixed;opacity:0'
+  document.body.append(ta)
+  ta.select()
+  let ok = false
+  try { ok = document.execCommand('copy') } catch { /* unsupported */ }
+  ta.remove()
+  return ok
+}

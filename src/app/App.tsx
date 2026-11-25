@@ -12,15 +12,17 @@ import { CheckFlipToasts, Health } from '../sections/Health'
 import { Income } from '../sections/Income'
 import { Operations } from '../sections/Operations'
 import { Overview } from '../sections/Overview'
+import { Phasing } from '../sections/Phasing'
 import { Returns } from '../sections/Returns'
 import { Scenarios } from '../sections/Scenarios'
+import { Statements } from '../sections/Statements'
 import { useRoute } from './router'
 import { Brand, Sidebar, SidebarNav } from './Sidebar'
 import { ThemeToggle, Topbar } from './Topbar'
 
 const VIEWS: Record<SectionId, () => JSX.Element> = {
-  overview: Overview, deal: Deal, build: Build, capital: Capital, income: Income, operations: Operations,
-  returns: Returns, health: Health, scenarios: Scenarios,
+  overview: Overview, deal: Deal, build: Build, phasing: Phasing, capital: Capital, income: Income, operations: Operations,
+  returns: Returns, statements: Statements, health: Health, scenarios: Scenarios,
 }
 
 /** If a scenario ever crashes the engine, offer a way out instead of a blank page: reset just that scenario, or its project. */

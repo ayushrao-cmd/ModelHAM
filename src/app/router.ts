@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import type { SectionId } from '../engine/types'
 
-export const SECTION_IDS: SectionId[] = ['overview', 'deal', 'build', 'capital', 'income', 'operations', 'returns', 'health', 'scenarios']
+export const SECTION_IDS: SectionId[] = ['overview', 'deal', 'build', 'phasing', 'capital', 'income', 'operations', 'returns', 'statements', 'health', 'scenarios']
 
 export function parseHash(hash: string): { section: SectionId; focus?: string } {
   const [path, query = ''] = hash.replace(/^#\/?/, '').split('?')

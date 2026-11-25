@@ -15,5 +15,7 @@ export const fmt = {
     const [y, m, d] = (typeof iso === 'number' ? toIso(iso) : iso).split('-')
     return `${d} ${MONTHS[Number(m) - 1]} ${y}`
   },
+  /** Indian financial year of a day, by its ending year: 31 Mar 2027 -> "FY27". */
+  fy: (d: Day): string => `FY${toIso(d).slice(2, 4)}`,
   num,
 }

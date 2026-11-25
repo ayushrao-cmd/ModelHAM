@@ -3,24 +3,11 @@ import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { type Cell, toCsv } from '../lib/export'
+import { type Cell, copy, toCsv } from '../lib/export'
 import { fmt } from '../lib/format'
 
 export type { Cell }
 export interface Column { label: string; format?: (n: number) => string }
-
-async function copy(text: string) {
-  try { await navigator.clipboard.writeText(text); return true } catch { /* no clipboard API or permission: fall back */ }
-  const ta = Object.assign(document.createElement('textarea'), { value: text })
-  ta.setAttribute('readonly', '')
-  ta.style.cssText = 'position:fixed;opacity:0'
-  document.body.append(ta)
-  ta.select()
-  let ok = false
-  try { ok = document.execCommand('copy') } catch { /* unsupported */ }
-  ta.remove()
-  return ok
-}
 
 /**
  * Compact table: right-aligned tabular numbers, sticky header and first column, and its own scroll container

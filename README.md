@@ -45,6 +45,21 @@ switches, creates, duplicates, renames and deletes projects (never the last one)
   are replaced by a card listing the missing fields (as links) with progress, and Health shows only the
   "Required" checks. Scenario JSON export carries the empty list; import goes into the active project.
 
+## Phasing and Financial Statements
+
+- **Phasing** owns the EPC phasing choice and the build milestones: the monthly construction schedule (cost lines,
+  GST, interest, physical and financial progress, how each month is funded), cumulative progress against each
+  milestone requirement, the funding drawdown and the Construction Support receipts.
+- **Financial Statements** shows an Income Statement, Balance Sheet and Cash Flow for every Indian financial year
+  (`FY27` to `FY45` at defaults), one tab each (`#/statements?tab=is|bs|cf`). These are simplified project accounts,
+  built in `src/engine/statements.ts` from the engine's own monthly and half-yearly results so they balance by
+  construction; Health re-checks them (`bs-balance`, `cf-reconcile`). Build costs incl. Interest During Build are
+  capitalised and amortised over the payment periods; current tax only. Not IGAAP/IndAS statements.
+
+Both sit behind the results gate in a blank project.
+
+![Balance sheet](docs/screenshots/statements-bs-1440-light.png)
+
 ## Saved data
 
 Projects, their scenarios and the theme choice are saved in browser cookies (`milestone.scenarios.v1.*`,
@@ -57,11 +72,11 @@ save; Safari: 7 days for script-set cookies). Use Export → scenario JSON for a
 
 | Path | What lives there |
 |---|---|
-| `src/engine/` | Pure, deterministic TypeScript model: timeline, build-period sources & uses with the interest-during-build (IDC) fixed point, operations, debt, tax, XIRR returns, health checks, bid-price solver, tornado sensitivity |
+| `src/engine/` | Pure, deterministic TypeScript model: timeline, build-period sources & uses with the interest-during-build (IDC) fixed point, operations, debt, tax, XIRR returns, health checks, bid-price solver, tornado sensitivity, annual financial statements and the monthly phasing schedule (`statements.ts`) |
 | `src/fields.ts` | Field registry: label, unit, range, help and section for every input |
 | `src/state/` | Zustand store (projects, scenarios) persisted to browser cookies; blank template and empty-field helpers (`projects.ts`); the memoised `useModel` hook (null results while a scenario is incomplete) |
 | `src/app/` | Shell: hash router (`#/overview`, `#/deal`, …), sidebar, top bar, ⌘K command palette, theme |
-| `src/sections/` | One screen per section: Overview, Deal & Timeline, Build, Capital, Income, Operations, Returns, Health, Scenarios |
+| `src/sections/` | One screen per section: Overview, Deal & Timeline, Build, Phasing, Capital, Income, Operations, Returns, Financial Statements, Health, Scenarios |
 | `src/components/` | Typed input fields, KPI tiles, data tables, solve card, shadcn/ui primitives |
 | `src/charts/` | Recharts charts and the pure data mappers they render |
 | `src/lib/` | Formatting (`en-IN`, ₹ crore), JSON/CSV export, path helpers |
@@ -72,7 +87,7 @@ return → health). The full design is in [`docs/2026-11-25-milestone-design.md`
 
 ## What's simplified vs the workbook
 
-Out of scope for this demo: IGAAP and IndAS statutory statements, balance sheet, termination payments,
+Out of scope for this demo: IGAAP and IndAS statutory statements (the app's statements are simplified project accounts), termination payments,
 CSR, mobilisation advance / short-term loan (a net-neutral pass-through to the EPC contractor in the
 workbook), early-completion bonus, Excel export, auth, backend, multi-user.
 

@@ -1,5 +1,3 @@
-import { DrawdownChart } from '../charts/DrawdownChart'
-import { MilestoneChart } from '../charts/MilestoneChart'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
 import { fmt } from '../lib/format'
@@ -26,15 +24,13 @@ function BuildResults() {
         rows={b.uses.map(u => [u.label, u.net, u.gst, u.net + u.gst, (u.net + u.gst) / b.totalUses])}
         total={['Total', net, gst, b.totalUses, 1]} />
     </Panel>
-    <Panel><DrawdownChart result={r} /></Panel>
-    <Panel><MilestoneChart result={r} /></Panel>
   </>
 }
 
 export function Build() {
   return (
     <SectionLayout id="build"
-      inputs={<>{['Hard costs', 'Soft costs', 'Phasing', 'Build Milestones'].map(g => <InputGroup key={g} section="build" group={g} />)}</>}
+      inputs={<>{['Hard costs', 'Soft costs'].map(g => <InputGroup key={g} section="build" group={g} />)}</>}
       results={<BuildResults />} />
   )
 }

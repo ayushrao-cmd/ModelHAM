@@ -2,6 +2,8 @@
 import { toIso } from '../engine/dates'
 import { DSCR_FLOOR } from '../engine/health'
 import type { ModelResult } from '../engine/model'
+import type { PhasingRow, Row, Statements } from '../engine/statements'
+import { fmt } from '../lib/format'
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const MAX_USE_SEGMENTS = 6 // beyond this, small use lines fold into "Other"
@@ -38,18 +40,19 @@ export function drawdownData(r: ModelResult) {
   return { rows, markers }
 }
 
-export function milestoneData(r: ModelResult) {
-  const months = r.build.months
-  if (!months.length) return [] // no build months: nothing to measure milestones against
-  const epcTotal = sum(months.map(m => m.epc))
-  let acc = 0
-  const financial = months.map(m => (acc += m.epc) / epcTotal) // cumulative EPC spend share, as in Health
-  return r.inputs.milestones.map((ms, n) => {
-    const m = monthOf(r, ms.day)
-    return { name: `M${n + 1}`, reqPhysical: ms.physical, projPhysical: months[m].cumPhysical,
-      reqFinancial: ms.financial, projFinancial: financial[m] }
-  })
+/** Cumulative physical and financial progress per build month; required progress sits only on milestone months. */
+export function sCurveData(rows: PhasingRow[]) {
+  const req = (x: PhasingRow, k: 'physical' | 'financial') => (x.milestones.length ? Math.max(...x.milestones.map(m => m[k])) : undefined)
+  return {
+    rows: rows.map(x => ({ month: toIso(x.day), physical: x.cumPhysical, financial: x.cumFinancial,
+      reqPhysical: req(x, 'physical'), reqFinancial: req(x, 'financial') })),
+    markers: rows.flatMap(x => x.milestones.map(m => ({ month: toIso(x.day), label: m.label }))),
+  }
 }
+
+/** One row per FY with the named statement lines, for charts. */
+export const fyData = (s: Statements, rows: Row[], keys: string[]): Record<string, string | number>[] =>
+  s.years.map((y, k) => ({ year: fmt.fy(y), ...Object.fromEntries(keys.map(key => [key, rows.find(x => x.key === key)!.values[k]])) }))
 
 export const incomeData = (r: ModelResult) => r.ops.map(p => ({ period: toIso(p.day),
   completion: p.completionPayment, interest: p.interestIncome, om: p.omPayment }))

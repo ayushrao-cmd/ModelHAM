@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { DEFAULT_INPUTS as i } from '../engine/defaults'
 import { runModel } from '../engine/model'
-import { sourcesUsesData, drawdownData, milestoneData, incomeData, dscrData, debtData, waterfallData } from './data'
+import { buildPhasing, buildStatements, lastOf, row } from '../engine/statements'
+import { sourcesUsesData, drawdownData, sCurveData, incomeData, dscrData, debtData, waterfallData, fyData } from './data'
 
 const r = runModel(i)
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -20,11 +21,19 @@ describe('chart data mappers', () => {
     expect(d.markers.map(m => m.label)).toEqual(['M1', 'M2', 'M3', 'M4'])
     d.markers.forEach(m => expect(d.rows.some(x => x.month === m.month)).toBe(true))
   })
-  it('milestone data pairs required with projected', () => {
-    const d = milestoneData(r)
-    expect(d).toHaveLength(i.milestones.length)
-    expect(d[0].reqPhysical).toBe(i.milestones[0].physical)
-    expect(d[3].projPhysical).toBeGreaterThan(0.9)
+  it('s-curve has a row per month, ending at 100%, with required progress only at milestone months', () => {
+    const { rows, markers } = sCurveData(buildPhasing(r))
+    expect(rows).toHaveLength(r.build.months.length)
+    expect(lastOf(rows)!.physical).toBeCloseTo(1, 10)
+    expect(rows.filter(x => x.reqPhysical != null).map(x => x.reqPhysical)).toEqual(i.milestones.map(m => m.physical))
+    expect(markers.map(m => m.label)).toEqual(['M1', 'M2', 'M3', 'M4'])
+  })
+  it('FY rows carry one value per statement line per year', () => {
+    const s = buildStatements(r)
+    const d = fyData(s, s.is, ['revenue', 'pat'])
+    expect(d).toHaveLength(s.years.length)
+    expect(d[0].year).toMatch(/^FY\d\d$/)
+    expect(sum(d.map(x => x.pat as number))).toBeCloseTo(sum(row(s.is, 'pat').values), 6)
   })
   it('income rows per period', () => {
     const d = incomeData(r)
@@ -54,7 +63,8 @@ describe('chart data mappers with no build months', () => {
     const e = runModel({ ...i, deal: { ...i.deal, buildDays: -30 } })
     expect(e.build.months).toEqual([])
     expect(drawdownData(e)).toEqual({ rows: [], markers: [] })
-    expect(milestoneData(e)).toEqual([])
+    expect(sCurveData(buildPhasing(e))).toEqual({ rows: [], markers: [] })
+    expect(() => buildStatements(e)).not.toThrow()
     expect(() => sourcesUsesData(e)).not.toThrow()
   })
 })

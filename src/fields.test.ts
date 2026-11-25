@@ -40,10 +40,13 @@ describe('field registry', () => {
     expect(m.milestones[1].day).toBe(500)
     expect(DEFAULT_INPUTS.milestones[1].day).toBe(548)
   })
+  it('field order is fixed: saved blank-project data encodes empty fields by FIELDS index', () => {
+    expect(FIELDS.map(x => x.id)).toEqual(['deal.projectName', 'deal.authorityName', 'deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm', 'deal.bidDate', 'deal.daysToAward', 'deal.daysToAgreement', 'deal.daysToStart', 'deal.buildDays', 'deal.operateYears', 'deal.pavement', 'milestones', 'build.epcFixed', 'build.gstWorks', 'build.gstServices', 'build.ieFeePctOfBid', 'build.adminPctOfEpc', 'build.fundRaisingPctOfDebt', 'build.financeLegal', 'build.contingency', 'build.preBid', 'build.preBidMiscPct', 'build.spvFormationPctOfShareCapital', 'build.patrolCapital', 'build.patrolRental', 'build.perfSecurityPctOfBid', 'build.perfSecurityCommissionPa', 'build.phasing', 'support.pctOfBid', 'support.tranches', 'capital.equityPct', 'capital.upfrontEquityPct', 'capital.shareCapitalPct', 'capital.buildRate', 'capital.operateRate', 'capital.repayment', 'capital.maxLeverage', 'capital.dscrWarn', 'income.completionPctOfBid', 'income.installments', 'income.firstPaymentLagDays', 'income.bankRates', 'income.spread', 'income.rateQuoteDate', 'income.maxQuoteAgeMonths', 'income.omBaseRate', 'income.omResurfacingRate', 'income.omPreResurfacingFlexible', 'income.omPreResurfacingPerpetual', 'indexation.wpi', 'indexation.cpi', 'indexation.wpiWeight', 'operations.routine', 'operations.electricity', 'operations.financeLegal', 'operations.staff', 'operations.patrolRunning', 'operations.ieFee', 'operations.insuranceBaseRate', 'operations.insuranceLoading', 'operations.majorMaintenance', 'operations.resurfacingYears', 'operations.inflation.maintenance', 'operations.inflation.staff', 'operations.inflation.electricity', 'operations.inflation.insurance', 'tax.baseRate', 'tax.surcharge', 'tax.cess', 'targets.equityIrrHurdle'])
+  })
   it('section/group layout is exactly as specified', () => {
     const pairs = [...new Set(FIELDS.map(x => x.section + '/' + x.group))].sort()
     expect(pairs).toEqual([
-      'build/Build Milestones', 'build/Hard costs', 'build/Phasing', 'build/Soft costs',
+      'build/Hard costs', 'build/Soft costs', 'phasing/Build Milestones', 'phasing/Phasing',
       'capital/Loan terms', 'capital/Repayment', 'capital/Structure',
       'deal/Bid', 'deal/Dates', 'deal/Project',
       'income/Annuity Rate', 'income/Completion Payments', 'income/Indexation', 'income/O&M Payments',

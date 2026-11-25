@@ -4,6 +4,7 @@ import { fmt } from '../lib/format'
 import { getAt } from '../lib/path'
 import { addMonths, isIsoDate, toDay } from './dates'
 import type { ModelResult } from './model'
+import { type Statements, buildStatements, row } from './statements'
 import type { FieldDef, Inputs, SectionId } from './types'
 
 export type Severity = 'error'|'warning'|'info'
@@ -156,7 +157,7 @@ export function runChecks(r: ModelResult): Check[] {
     const m = found < 0 ? months.length - 1 : found
     const mo = months[m], phys = mo.cumPhysical, fin = financial[m]
     const ok = phys >= ms.physical - SUM_TOL && fin >= ms.financial - SUM_TOL
-    out.push(check(`milestone-progress-${n + 1}`, `Build Milestone ${n + 1} progress`, 'build', 'error', ok,
+    out.push(check(`milestone-progress-${n + 1}`, `Build Milestone ${n + 1} progress`, 'phasing', 'error', ok,
       `Day ${ms.day} (${fmt.date(mo.day)}): physical ${fmt.pct(phys)} vs required ${fmt.pct(ms.physical)}; financial ${fmt.pct(fin)} vs required ${fmt.pct(ms.financial)}.`,
       'milestones'))
     const excess = mo.cumFunding - mo.cumCost
@@ -236,7 +237,30 @@ export function runChecks(r: ModelResult): Check[] {
       : `Equity IRR ${fmt.pct(k.equityIrr)} is ${k.equityIrr >= hurdle ? 'at or above' : 'below'} the ${fmt.pct(hurdle)} hurdle.`,
     'targets.equityIrrHurdle'))
 
+  out.push(...statementChecks(buildStatements(r)))
   return out
+}
+
+/** The statements' own identities, re-checked on the statements as built: balance sheet and cash reconciliation. */
+export function statementChecks(s: Statements): Check[] {
+  const { years } = s
+  const span = years.length ? `${fmt.fy(years[0])} to ${fmt.fy(years[years.length - 1])}` : ''
+  const test = (id: string, title: string, a: number[], c: number[], ok: string, bad: (gap: number, year: string) => string) => {
+    const gaps = years.map((_, k) => a[k] - c[k])
+    const k = gaps.findIndex(g => !(Math.abs(g) <= RECON_TOL))
+    const worst = Math.max(0, ...gaps.map(Math.abs))
+    return check(id, title, 'statements', 'error', k < 0,
+      !years.length ? 'No financial years to check.'
+        : k < 0 ? `${ok} at every FY end, ${span} (largest gap ${fmt.cr(worst)}).`
+        : bad(gaps[k], `${fmt.fy(years[k])} (${fmt.date(years[k])})`))
+  }
+  const v = (rows: Statements['bs'], key: string) => row(rows, key).values
+  return [
+    test('bs-balance', 'Balance sheet balances', v(s.bs, 'totalAssets'), v(s.bs, 'totalLiabilitiesEquity'), 'Balance sheet balances',
+      (g, y) => `Balance sheet does not balance at ${y}: assets exceed liabilities and equity by ${fmt.cr(g)}.`),
+    test('cf-reconcile', 'Cash flow reconciles to balance sheet', v(s.cf, 'closingCash'), v(s.bs, 'cash'), 'Closing cash equals balance-sheet cash',
+      (g, y) => `Cash flow closing cash differs from balance-sheet cash at ${y} by ${fmt.cr(g)}.`),
+  ]
 }
 
 export function healthScore(checks: Check[]) {

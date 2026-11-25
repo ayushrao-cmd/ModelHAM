@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { DEFAULT_INPUTS as D } from './defaults'
 import { runModel } from './model'
-import { type Check, healthScore, runChecks, validateInputs } from './health'
+import { type Check, healthScore, runChecks, statementChecks, validateInputs } from './health'
+import { buildStatements, row } from './statements'
 import type { Inputs } from './types'
 import { fieldById } from '../fields'
 import { setAt } from '../lib/path'
@@ -23,7 +24,7 @@ describe('health at defaults', () => {
     const ids = ['financing-tieup', ...[1, 2, 3, 4].flatMap(k => [`milestone-progress-${k}`, `milestone-funding-${k}`]),
       'dscr-floor', 'dscr-warn', 'debt-repaid', 'repayment-sum', 'installment-sum', 'tranche-sum', 'rate-quote-fresh',
       'aps-trigger', 'leverage', 'sources-uses', 'build-cash', 'om-margin', 'solver-converged', 'equity-hurdle',
-      'resurfacing-order', 'dates-order', 'irr-undefined', 'field:deal.buildDays']
+      'resurfacing-order', 'dates-order', 'irr-undefined', 'field:deal.buildDays', 'bs-balance', 'cf-reconcile']
     for (const id of ids) expect(cs.map(c => c.id), id).toContain(id)
     expect(new Set(cs.map(c => c.id)).size).toBe(cs.length)
   })
@@ -53,7 +54,7 @@ describe('health at defaults', () => {
 
   it('every check has a known section and, if set, a resolvable field', () => {
     for (const c of cs) {
-      expect(['deal', 'build', 'capital', 'income', 'operations', 'returns']).toContain(c.section)
+      expect(['deal', 'build', 'phasing', 'capital', 'income', 'operations', 'returns', 'statements']).toContain(c.section)
       if (c.fieldId) expect(fieldById(c.fieldId), c.id).toBeDefined()
     }
   })
@@ -245,3 +246,39 @@ describe('no build months', () => {
   })
 })
 
+
+describe('statement checks', () => {
+  const r = runModel(D)
+  const fresh = () => buildStatements(r)
+
+  it('pass at defaults, in the statements section, as errors', () => {
+    const cs = runChecks(r)
+    for (const id of ['bs-balance', 'cf-reconcile']) expect(find(cs, id)).toMatchObject({ section: 'statements', severity: 'error', pass: true })
+    expect(find(cs, 'bs-balance').message).toMatch(/^Balance sheet balances at every FY end, FY\d\d to FY\d\d/)
+    expect(find(cs, 'milestone-progress-1').section).toBe('phasing')
+  })
+
+  it('bs-balance fails on a corrupted balance sheet, naming the first failing year and the gap', () => {
+    const s = fresh()
+    row(s.bs, 'totalAssets').values[3] += 1.5
+    const c = find(statementChecks(s), 'bs-balance')
+    expect(c.pass).toBe(false)
+    expect(c.message).toContain('₹1.50 Cr')
+    expect(c.message).toContain(`FY${String(new Date(s.years[3] * 86_400_000).getUTCFullYear() % 100).padStart(2, '0')}`)
+    expect(find(statementChecks(s), 'cf-reconcile').pass).toBe(true)
+  })
+
+  it('cf-reconcile fails when CFS closing cash differs from BS cash', () => {
+    const s = fresh()
+    row(s.cf, 'closingCash').values[1] -= 0.25
+    const c = find(statementChecks(s), 'cf-reconcile')
+    expect(c.pass).toBe(false)
+    expect(c.message).toContain('₹0.25 Cr')
+  })
+
+  it('a gap within ₹0.01 Cr still passes', () => {
+    const s = fresh()
+    row(s.bs, 'totalAssets').values[0] += 0.004
+    expect(find(statementChecks(s), 'bs-balance').pass).toBe(true)
+  })
+})

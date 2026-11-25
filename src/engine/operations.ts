@@ -48,7 +48,7 @@ export function opexForYear(i: Inputs, year: number, d: Day, epcNet: number) {
 }
 
 export interface OpsPeriod { n: number; day: Day; year: number; completionPayment: number; interestIncome: number; omPayment: number;
-  gstRecovery: number; opex: number; tax: number; cfads: number; debtOpening: number; principal: number; interest: number;
+  gstRecovery: number; opex: number; amortisation: number; tax: number; cfads: number; debtOpening: number; principal: number; interest: number;
   debtClosing: number; reserveBalance: number; reserveMovement: number; wcRelease: number; equityCash: number; dscr: number | null;
   balanceOutstanding: number }
 
@@ -91,7 +91,7 @@ export function runOperations(i: Inputs, t: Timeline,
     const cfads = completionPayment + interestIncome + omPayment + gstRecovery - opex - tax
     const service = principal + interest
     const wcRelease = n === P ? b.workingCapital : 0 // liquidity buffer held to concession end (workbook "funds for expenses")
-    return { n, day, year, completionPayment, interestIncome, omPayment, gstRecovery, opex, tax, cfads, debtOpening, principal,
+    return { n, day, year, completionPayment, interestIncome, omPayment, gstRecovery, opex, amortisation, tax, cfads, debtOpening, principal,
       interest, debtClosing, reserveBalance, reserveMovement, wcRelease,
       equityCash: cfads - service - reserveMovement + wcRelease, dscr: service > 0 ? cfads / service : null, balanceOutstanding }
   })

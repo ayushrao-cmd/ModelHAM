@@ -35,7 +35,7 @@ function Item({ s, active, status, onNavigate, rail }: { s: SectionMeta; active:
           rail && 'border bg-sidebar', active && rail && 'border-primary bg-primary text-primary-foreground')}>
           <Icon className="size-4" aria-hidden="true" />
         </span>
-        <span className="flex-1 truncate">{s.label}</span>
+        <span className="flex-1 truncate" title={s.short && s.label}>{s.short ?? s.label}</span>
         <span className={cn('size-2 shrink-0 rounded-full', DOT[status])} title={`${s.label} ${SAY[status]}`} aria-hidden="true" />
         <span className="sr-only">, {SAY[status]}</span>
       </a>
@@ -55,7 +55,7 @@ export function SidebarNav({ current, onNavigate }: { current: SectionId; onNavi
       <ul className="relative before:absolute before:bottom-5 before:left-[23.5px] before:top-5 before:w-px before:bg-border">
         {story.map(s => item(s, true))}
       </ul>
-      <ul className="border-t pt-4">{SECTIONS.filter(s => s.id === 'health' || s.id === 'scenarios').map(s => item(s))}</ul>
+      <ul className="border-t pt-4">{SECTIONS.filter(s => !STORY.includes(s.id) && s.id !== 'overview').map(s => item(s))}</ul>
     </nav>
   )
 }

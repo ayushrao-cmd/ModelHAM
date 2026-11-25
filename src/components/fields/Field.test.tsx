@@ -75,7 +75,7 @@ describe('Field', () => {
   })
 
   it('does not repeat a list label that equals its group heading, but keeps it as the accessible name', () => {
-    render(<TooltipProvider><InputGroup section="build" group="Build Milestones" /></TooltipProvider>)
+    render(<TooltipProvider><InputGroup section="phasing" group="Build Milestones" /></TooltipProvider>)
     expect(screen.getAllByText('Build Milestones', { exact: true }).filter(el => !el.closest('.sr-only'))).toHaveLength(1)
     expect(screen.getByRole('group', { name: 'Build Milestones' })).toBeTruthy()
   })

@@ -7,6 +7,8 @@ import { Capital } from './Capital'
 import { Deal } from './Deal'
 import { Income } from './Income'
 import { Operations } from './Operations'
+import { Phasing } from './Phasing'
+import { Statements } from './Statements'
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } // jsdom lacks it
 
@@ -18,7 +20,7 @@ beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.l
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('sections', () => {
-  it.each([['Deal', Deal], ['Build', Build], ['Capital', Capital], ['Income', Income], ['Operations', Operations]])(
+  it.each([['Deal', Deal], ['Build', Build], ['Phasing', Phasing], ['Capital', Capital], ['Income', Income], ['Operations', Operations], ['Statements', Statements]])(
     '%s renders with defaults and shows a chart or table', (_, View) => {
       const { container } = wrap(<View />)
       expect(screen.getByRole('heading', { level: 1 })).toBeTruthy()
@@ -53,5 +55,33 @@ describe('sections', () => {
     wrap(<Operations />)
     const chip = screen.getByRole('link', { name: /warning/ })
     expect(chip.getAttribute('href')).toBe('#/health?section=operations')
+  })
+
+  it('statements open on the tab named in the URL and keep the tab in the URL when switched', () => {
+    window.location.hash = '#/statements?tab=bs'
+    wrap(<Statements />)
+    expect(screen.getByRole('tab', { name: 'Balance Sheet' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText(/^Balance sheet balances at every FY end/)).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Balance sheet' }).textContent).toMatch(/FY27.*COD/)
+    const cf = screen.getByRole('tab', { name: 'Cash Flow' })
+    fireEvent.mouseDown(cf) // Radix tabs activate on mousedown
+    expect(cf.getAttribute('aria-selected')).toBe('true')
+    expect(window.location.hash).toBe('#/statements?tab=cf')
+    expect(screen.getByText(/^Closing cash equals balance-sheet cash/)).toBeTruthy()
+  })
+
+  it('statements show negatives in parentheses', () => {
+    wrap(<Statements />)
+    const is = screen.getByRole('region', { name: 'Income statement' })
+    expect(is.textContent).toMatch(/\(\d[\d,]*\.\d\d\)/)
+    expect(is.textContent).not.toMatch(/-\d/)
+  })
+
+  it.each([['Phasing', Phasing], ['Statements', Statements]])('%s sits behind the results gate in a blank project', (_, View) => {
+    useStore.getState().createProject('blank')
+    const { container } = wrap(<View />)
+    expect(screen.getByText(/^Fill in \d+ more fields to see results$/)).toBeTruthy()
+    expect(container.querySelectorAll('figure, [role="tablist"]').length).toBe(0) // the milestone input list is a table; results are not
+    expect(screen.queryByText(/^(Monthly construction schedule|Income statement)$/)).toBeNull()
   })
 })

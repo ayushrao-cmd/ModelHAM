@@ -8,8 +8,11 @@ const MAX_ITERATIONS = 50 // fixed-point cap (spec §7)
 const TOLERANCE = 0.01 // ₹ Cr, i.e. ₹1 lakh change in total debt
 
 export interface UseLine { key: string; label: string; net: number; gst: number }
-export interface BuildMonth { day: Day; epc: number; otherUses: number; gstPaid: number; idc: number; supportReceived: number;
-  supportGst: number; equityDraw: number; debtDraw: number; debtBalance: number; cumPhysical: number; cumCost: number; cumFunding: number }
+/** One build month. epc and otherUses are gross of GST; epcFixed, epcVariable, reserve and workingCapital are net
+ * detail (reserve and working capital are part of otherUses). cash = surplus carried to the next month. */
+export interface BuildMonth { day: Day; days: number; epc: number; epcFixed: number; epcVariable: number; otherUses: number;
+  reserve: number; workingCapital: number; gstPaid: number; idc: number; supportReceived: number; supportGst: number;
+  equityDraw: number; debtDraw: number; debtBalance: number; cash: number; cumPhysical: number; cumCost: number; cumFunding: number }
 export interface BuildResult { months: BuildMonth[]; uses: UseLine[]; totalUses: number; support: number; supportGst: number;
   epcVariable: number; // Σ variable EPC (indexation pass-through), net of GST
   equity: number; shareCapital: number; promoterDebt: number; debt: number; idc: number; reserve: number; workingCapital: number;
@@ -92,10 +95,12 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     const months: BuildMonth[] = t.months.map((day, m) => {
       const idc = balance * i.capital.buildRate * days[m] / DAYS_IN_YEAR
       let epc = 0, otherUses = 0, gstPaid = 0
+      const net: Record<string, number> = {}
       for (const l of ls) {
         const gross = l.net[m] * (1 + l.gstRate)
         if (l.epc) epc += gross; else otherUses += gross
         gstPaid += l.net[m] * l.gstRate
+        net[l.key] = l.net[m]
       }
       const need = epc + otherUses + idc - received[m] - supportGst[m] - carry
       const funding = Math.max(0, need)
@@ -107,8 +112,9 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
       balance += debtDraw
       cumCost += epc + otherUses + idc
       cumFunding += received[m] + supportGst[m] + funding
-      return { day, epc, otherUses, gstPaid, idc, supportReceived: received[m], supportGst: supportGst[m], equityDraw, debtDraw,
-        debtBalance: balance, cumPhysical: cumPhysical[m], cumCost, cumFunding }
+      return { day, days: days[m], epc, epcFixed: net.epcFixed, epcVariable: net.epcVariable, otherUses, reserve: net.reserve,
+        workingCapital: net.workingCapital, gstPaid, idc, supportReceived: received[m], supportGst: supportGst[m], equityDraw, debtDraw,
+        debtBalance: balance, cash: carry, cumPhysical: cumPhysical[m], cumCost, cumFunding }
     })
     const idc = sum(months.map(m => m.idc))
     const uses: UseLine[] = ls.map(l => ({ key: l.key, label: l.label, net: sum(l.net), gst: sum(l.net) * l.gstRate }))
@@ -133,9 +139,12 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
   }
 
   const lineNet = (k: string) => pass.uses.find(u => u.key === k)!.net
-  const shareCapital = E * i.capital.shareCapitalPct
+  // Report what the final pass actually drew (within TOLERANCE of D and E), so debt, equity and the monthly draws
+  // agree exactly and the statements balance by construction.
+  const equity = sum(pass.months.map(m => m.equityDraw)), debt = sum(pass.months.map(m => m.debtDraw))
+  const shareCapital = equity * i.capital.shareCapitalPct
   return { months: pass.months, uses: pass.uses, totalUses, support, supportGst: supportGstTotal, epcVariable: lineNet('epcVariable'),
-    equity: E, shareCapital,
-    promoterDebt: E - shareCapital, debt: D, idc: pass.idc, reserve: lineNet('reserve'), workingCapital: lineNet('workingCapital'),
+    equity, shareCapital,
+    promoterDebt: equity - shareCapital, debt, idc: pass.idc, reserve: lineNet('reserve'), workingCapital: lineNet('workingCapital'),
     netGstCredit: Math.max(0, sum(pass.months.map(m => m.gstPaid)) - supportGstTotal), converged, iterations }
 }

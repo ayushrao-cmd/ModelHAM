@@ -1,5 +1,5 @@
 // All money in ₹ Cr, rates as fractions. No React/DOM imports.
-export type SectionId = 'overview'|'deal'|'build'|'capital'|'income'|'operations'|'returns'|'health'|'scenarios'
+export type SectionId = 'overview'|'deal'|'build'|'phasing'|'capital'|'income'|'operations'|'returns'|'statements'|'health'|'scenarios'
 export type Pavement = 'flexible'|'flexiblePerpetual'
 export interface Inputs {
   deal: { projectName: string; authorityName: string; bidPrice: number; authorityEstimate: number; lengthKm: number;
