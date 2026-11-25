@@ -18,10 +18,7 @@ describe('runModel', () => {
 
   it('calibration band vs the workbook (spec §7)', () => {
     const band: [keyof typeof k, number, number][] = [
-      // Widened from ±0.015: the engine releases working capital (₹53 Cr, 75% debt-funded) to equity at the first
-      // payment; the workbook holds it as a "funds for expenses" account until FY2045. Holding it to the end of the
-      // concession gives 15.12%, so the whole +1.6 pp gap is that timing choice (Task 5 wcRelease), not a defect.
-      ['equityIrr', 0.151, 0.017], ['projectIrrPre', 0.118, 0.015], ['projectIrrPost', 0.104, 0.015],
+      ['equityIrr', 0.151, 0.015], ['projectIrrPre', 0.118, 0.015], ['projectIrrPost', 0.104, 0.015],
       ['dscrMin', 1.20, 0.15], ['dscrAvg', 1.47, 0.15],
     ]
     const rows = band.map(([key, target, tol]) => {

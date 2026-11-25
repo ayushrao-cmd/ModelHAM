@@ -90,7 +90,7 @@ export function runOperations(i: Inputs, t: Timeline,
     const tax = Math.max(0, taxable) * taxRate
     const cfads = completionPayment + interestIncome + omPayment + gstRecovery - opex - tax
     const service = principal + interest
-    const wcRelease = n === 1 ? b.workingCapital : 0
+    const wcRelease = n === P ? b.workingCapital : 0 // liquidity buffer held to concession end (workbook "funds for expenses")
     return { n, day, year, completionPayment, interestIncome, omPayment, gstRecovery, opex, tax, cfads, debtOpening, principal,
       interest, debtClosing, reserveBalance, reserveMovement, wcRelease,
       equityCash: cfads - service - reserveMovement + wcRelease, dscr: service > 0 ? cfads / service : null, balanceOutstanding }

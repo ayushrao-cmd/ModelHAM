@@ -94,9 +94,10 @@ describe('runOperations (defaults, stub build)', () => {
     })
   })
 
-  it('working capital released in period 1; reserve released after the last repayment', () => {
-    expect(p[0].wcRelease).toBe(55)
-    expect(p.slice(1).every(x => x.wcRelease === 0)).toBe(true)
+  it('working capital released in the final period; reserve released after the last repayment', () => {
+    expect(p[p.length - 1].wcRelease).toBe(55) // liquidity buffer held to the final period
+    expect(p[0].wcRelease).toBe(0)
+    expect(p.slice(0, -1).every(x => x.wcRelease === 0)).toBe(true)
     expect(p[25].reserveBalance).toBeCloseTo(0, 9)
     expect(p[0].reserveMovement).toBeCloseTo(p[0].reserveBalance - 60, 9)
     expect(p[0].reserveBalance).toBeCloseTo(p[1].principal + p[1].interest, 9)
