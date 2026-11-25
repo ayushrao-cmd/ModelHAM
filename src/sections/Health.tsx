@@ -1,0 +1,164 @@
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
+import { CheckIcon, RANK, status } from '../app/CommandPalette'
+import { go, useRoute } from '../app/router'
+import { SECTIONS } from '../app/sections'
+import type { Check } from '../engine/health'
+import { fieldById } from '../fields'
+import { useStore } from '../state/store'
+import { useModel } from '../state/useModel'
+import { SectionHeader, Segmented } from './SectionLayout'
+
+/** Navigate to a check's field (in the field's own section), or to its section when it names no field. */
+export const jumpTo = (c: Check) => go((c.fieldId && fieldById(c.fieldId)?.section) || c.section, c.fieldId)
+
+const MAX_NAMED = 3 // a flip toast names this many checks, then counts the rest
+/** "2 checks changed: X now failing, Y now passing", or null when no check present in both runs flipped. */
+export function flipSummary(prev: Map<string, boolean>, checks: Check[]): string | null {
+  const flipped = checks.filter(c => prev.has(c.id) && prev.get(c.id) !== c.pass)
+  if (!flipped.length) return null
+  const named = flipped.slice(0, MAX_NAMED).map(c => `${c.title} now ${c.pass ? 'passing' : 'failing'}`)
+  const more = flipped.length > MAX_NAMED ? `, and ${flipped.length - MAX_NAMED} more` : ''
+  return `${flipped.length} check${flipped.length === 1 ? '' : 's'} changed: ${named.join(', ')}${more}`
+}
+
+/** Mounted once in the shell: one toast per edit that flips any check. Switching scenarios is not an edit, so it resets the baseline. */
+export function CheckFlipToasts() {
+  const { checks } = useModel()
+  const activeId = useStore(s => s.activeId)
+  const prev = useRef<{ activeId: string; pass: Map<string, boolean> } | null>(null)
+  useEffect(() => {
+    const p = prev.current
+    prev.current = { activeId, pass: new Map(checks.map(c => [c.id, c.pass])) }
+    if (!p || p.activeId !== activeId) return
+    const msg = flipSummary(p.pass, checks)
+    if (!msg) return
+    const worse = checks.some(c => p.pass.get(c.id) === true && !c.pass)
+    if (worse) toast.warning(msg); else toast.success(msg)
+  }, [checks, activeId])
+  return null
+}
+
+type Filter = 'all' | 'error' | 'warning' | 'info' | 'passed'
+const matches = (c: Check, f: Filter) => f === 'all' || (f === 'passed' ? c.pass : !c.pass && c.severity === f)
+
+/** Share of checks passing as a ring; the track is a lighter step of the same hue as the fill. */
+function ScoreRing({ passed, total, tone }: { passed: number; total: number; tone: string }) {
+  const R = 42, C = 2 * Math.PI * R, share = total ? passed / total : 1
+  return (
+    <div className={cn('relative size-28 shrink-0', tone)}>
+      <svg viewBox="0 0 100 100" className="size-full -rotate-90" aria-hidden="true">
+        <circle cx="50" cy="50" r={R} fill="none" stroke="currentColor" strokeOpacity={0.15} strokeWidth="8" />
+        <circle cx="50" cy="50" r={R} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={`${share * C} ${C}`} className="motion-safe:transition-[stroke-dasharray] motion-safe:duration-300" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-foreground">
+        <span className="text-xl font-semibold tabular-nums">{passed}/{total}</span>
+        <span className="text-xs text-muted-foreground">passed</span>
+      </div>
+    </div>
+  )
+}
+
+function CheckRow({ c }: { c: Check }) {
+  const field = c.fieldId ? fieldById(c.fieldId) : undefined
+  return (
+    <li className="flex items-start gap-2 px-4 py-3 sm:gap-3 sm:px-5">
+      <div className="flex min-w-0 flex-1 gap-3">
+        <span className="mt-0.5 shrink-0 [&>svg]:size-4"><CheckIcon c={c} /></span>
+        <div className="min-w-0">
+          <p className={cn('text-sm font-medium leading-5', c.pass && 'text-muted-foreground')}>
+            <span className="sr-only">{status(c)}: </span>{c.title}
+          </p>
+          <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{c.message}</p>
+        </div>
+      </div>
+      {field && (
+        <Button variant="ghost" size="sm" className="-mr-2 h-8 shrink-0 px-2 text-xs" onClick={() => jumpTo(c)} aria-label={`Go to field: ${field.label}`}>
+          <span className="hidden sm:inline">Go to field</span><ArrowRight className="size-4 sm:size-3.5" aria-hidden="true" />
+        </Button>
+      )}
+    </li>
+  )
+}
+
+export function Health() {
+  const { checks, score } = useModel()
+  const { param } = useRoute()
+  const withChecks = SECTIONS.filter(s => checks.some(c => c.section === s.id))
+  const fromHash = param('section')
+  const routeSection = withChecks.some(s => s.id === fromHash) ? fromHash! : 'all'
+  const [section, setSection] = useState(routeSection)
+  useEffect(() => setSection(routeSection), [routeSection]) // a later deep link wins
+  const [filter, setFilter] = useState<Filter>('all')
+
+  const pickSection = (v: string) => {
+    setSection(v)
+    // Keep the link shareable without a hashchange (which would move focus to the page heading).
+    history.replaceState(null, '', v === 'all' ? '#/health' : `#/health?section=${v}`)
+  }
+
+  const inSection = checks.filter(c => section === 'all' || c.section === section)
+  const count = (f: Filter) => inSection.filter(c => matches(c, f)).length
+  // Failing first (errors, warnings, notes), then passing; stable within each, so FIELDS order holds.
+  const shown = inSection.filter(c => matches(c, filter)).sort((a, b) => Number(a.pass) - Number(b.pass) || RANK[a.severity] - RANK[b.severity])
+  const notes = checks.filter(c => !c.pass && c.severity === 'info').length
+  const tone = score.errors ? 'text-destructive' : score.warnings ? 'text-warning' : 'text-success'
+  const FILTERS: [Filter, string][] = [['all', 'All'], ['error', 'Errors'], ['warning', 'Warnings'], ['info', 'Info'], ['passed', 'Passed']]
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader id="health" />
+      <Card className="flex flex-col items-center gap-5 p-5 shadow-card sm:flex-row sm:gap-8">
+        <ScoreRing passed={score.passed} total={score.total} tone={tone} />
+        <dl className="grid w-full grid-cols-3 gap-4 sm:w-auto sm:gap-10">
+          {[['Errors', score.errors, 'text-destructive'], ['Warnings', score.warnings, 'text-warning'], ['Notes', notes, 'text-foreground']].map(([l, n, t]) => (
+            <div key={l as string}>
+              <dt className="text-[13px] text-muted-foreground">{l}</dt>
+              <dd className={cn('mt-1 text-2xl font-semibold tabular-nums', n ? t : 'text-foreground')}>{n}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="text-[13px] leading-5 text-muted-foreground sm:ml-auto sm:max-w-xs">
+          Errors make the model wrong or unbankable; warnings need a look; notes are for information.
+        </p>
+      </Card>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Segmented label="Show checks" value={filter} onChange={setFilter}
+          options={FILTERS.map(([v, l]) => ({ value: v, label: <>{l}<span className="tabular-nums text-muted-foreground">{count(v)}</span></>, name: `${l} ${count(v)}` }))} />
+        <Select value={section} onValueChange={pickSection}>
+          <SelectTrigger aria-label="Section" className="h-9 w-full bg-card sm:w-52"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sections</SelectItem>
+            {withChecks.map(s => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {shown.length ? withChecks.map(s => {
+        const mine = shown.filter(c => c.section === s.id)
+        if (!mine.length) return null
+        return (
+          <section key={s.id} aria-label={`${s.label} checks`}>
+            <h2 className="mb-2 flex items-baseline gap-2 text-[15px] font-semibold">
+              {s.label}<span className="text-[13px] font-normal tabular-nums text-muted-foreground">{mine.length}</span>
+            </h2>
+            <Card className="overflow-hidden shadow-card">
+              <ul className="divide-y">{mine.map(c => <CheckRow key={c.id} c={c} />)}</ul>
+            </Card>
+          </section>
+        )
+      }) : (
+        <p role="status" className="rounded-lg border border-dashed px-5 py-8 text-center text-sm text-muted-foreground">
+          No checks match these filters.
+        </p>
+      )}
+    </div>
+  )
+}

@@ -1,10 +1,13 @@
-import { Check, ChevronsUpDown, CircleAlert, CircleCheck, Download, Menu, Moon, Sun, TriangleAlert } from 'lucide-react'
+import { useRef } from 'react'
+import { Check, ChevronsUpDown, CircleAlert, CircleCheck, Download, FileJson, Menu, Moon, Sheet, Sun, TriangleAlert, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { download, exportScenarioJson, exportSchedulesCsv, slug } from '../lib/export'
 import { useStore } from '../state/store'
 import { useModel } from '../state/useModel'
 import { CommandPalette } from './CommandPalette'
@@ -61,21 +64,43 @@ function HealthBadge() {
 }
 
 function ExportMenu() {
+  const file = useRef<HTMLInputElement>(null)
+  const importScenario = useStore(s => s.importScenario)
+  const { active: r } = useModel()
+  const scenario = useStore(s => s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0])
+  const onFile = async (f: File | undefined) => {
+    if (!f) return
+    let text: string
+    try { text = await f.text() } catch { toast.error(`Could not read ${f.name}.`); return }
+    const res = importScenario(text)
+    if (res.ok) toast.success(`Imported ${f.name} as a new scenario and opened it`)
+    else toast.error(res.error ?? 'Import failed.')
+  }
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="h-9 w-9 bg-card px-0 md:w-auto md:px-3" aria-label="Export">
-          <Download aria-hidden="true" /><span className="hidden md:inline">Export</span>
-        </Button>
-      </DropdownMenuTrigger>
-      {/* Task 13 wires these up. */}
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem disabled>Export scenario (JSON)</DropdownMenuItem>
-        <DropdownMenuItem disabled>Import scenario…</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>Export schedules (CSV)</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="h-9 w-9 bg-card px-0 md:w-auto md:px-3" aria-label="Export and import">
+            <Download aria-hidden="true" /><span className="hidden md:inline">Export</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuItem onSelect={() => download(`${slug(scenario.name)}.json`, exportScenarioJson(scenario), 'application/json')}>
+            <FileJson aria-hidden="true" />Export scenario (JSON)
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => file.current?.click()}>
+            <Upload aria-hidden="true" />Import scenario…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => download(`${slug(scenario.name)}-schedules.csv`, exportSchedulesCsv(r), 'text/csv')}>
+            <Sheet aria-hidden="true" />Export schedules (CSV)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Outside the menu, which unmounts on close. Reset so choosing the same file again still fires change. */}
+      <input ref={file} type="file" accept="application/json,.json" className="hidden" tabIndex={-1} aria-hidden="true"
+        onChange={e => { void onFile(e.target.files?.[0]); e.target.value = '' }} />
+    </>
   )
 }
 

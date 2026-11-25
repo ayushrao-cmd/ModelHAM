@@ -7,7 +7,7 @@ import { useStore } from './store'
 
 // Shared across every component that calls useModel (per-component useMemo alone would rerun the engine per caller).
 const results = new WeakMap<Inputs, ModelResult>()
-const resultFor = (i: Inputs) => {
+export const resultFor = (i: Inputs) => {
   let r = results.get(i)
   if (!r) { r = runModel(i); results.set(i, r) }
   return r

@@ -14,10 +14,12 @@ interface Store {
   renameScenario(id: string, name: string): void
   deleteScenario(id: string): void
   setActive(id: string): void
+  setBase(id: string): void
   setCompare(id: string | null): void
   importScenario(json: string): { ok: boolean; error?: string }
 }
 
+const INPUT_KEYS = Object.keys(DEFAULT_INPUTS) // deal, milestones, build, … targets
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const parse = (s: string): unknown => { try { return JSON.parse(s) } catch { return undefined } }
 
@@ -96,12 +98,16 @@ export const useStore = create<Store>()(persist((set, get) => {
       return { scenarios, baseId, activeId: st.activeId === id ? baseId : st.activeId, compareId: st.compareId === id ? null : st.compareId }
     }),
     setActive: id => { if (byId(id)) set({ activeId: id }) },
+    setBase: id => { if (byId(id)) set({ baseId: id }) },
     setCompare: id => { if (id === null || byId(id)) set({ compareId: id }) },
     importScenario: json => {
       const raw = parse(json)
       if (!isObj(raw)) return { ok: false, error: 'That file is not a scenario: expected a JSON object.' }
       const isScenario = isObj(raw.inputs)
-      const id = add(isScenario && typeof raw.name === 'string' ? raw.name : 'Imported scenario', mergeWithDefaults(isScenario ? raw.inputs : raw))
+      const inputs = isScenario ? raw.inputs as Record<string, unknown> : raw
+      if (!INPUT_KEYS.some(k => k in inputs))
+        return { ok: false, error: `That file is not a scenario: it has none of the model's sections (${INPUT_KEYS.join(', ')}).` }
+      const id = add(isScenario && typeof raw.name === 'string' ? raw.name : 'Imported scenario', mergeWithDefaults(inputs))
       set({ activeId: id })
       return { ok: true }
     },

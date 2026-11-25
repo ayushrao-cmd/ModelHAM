@@ -42,7 +42,10 @@ export function go(section: SectionId, focus?: string) {
 const subscribe = (cb: () => void) => { window.addEventListener('hashchange', cb); return () => window.removeEventListener('hashchange', cb) }
 const getHash = () => window.location.hash
 
-export function useRoute(): { section: SectionId; focus?: string; go(section: SectionId, focusFieldId?: string): void } {
+/** A query value from the hash, e.g. 'capital' from '#/health?section=capital'. */
+export const hashParam = (hash: string, key: string) => new URLSearchParams(hash.split('?')[1] ?? '').get(key)
+
+export function useRoute(): { section: SectionId; focus?: string; param(key: string): string | null; go(section: SectionId, focusFieldId?: string): void } {
   const hash = useSyncExternalStore(subscribe, getHash, () => '')
-  return { ...parseHash(hash), go }
+  return { ...parseHash(hash), param: key => hashParam(hash, key), go }
 }

@@ -3,13 +3,11 @@ import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { type Cell, toCsv } from '../lib/export'
 import { fmt } from '../lib/format'
 
-export type Cell = string | number
+export type { Cell }
 export interface Column { label: string; format?: (n: number) => string }
-
-const csvCell = (v: Cell) => (typeof v === 'number' ? String(Number(v.toFixed(6))) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
-const toCsv = (columns: Column[], rows: Cell[][]) => [columns.map(c => c.label), ...rows].map(r => r.map(csvCell).join(',')).join('\n')
 
 async function copy(text: string) {
   try { await navigator.clipboard.writeText(text); return true } catch { /* no clipboard API or permission: fall back */ }
@@ -35,7 +33,7 @@ export function DataTable({ title, description, columns, rows, total, className 
   // ponytail: an exact zero reads as a dash, Stripe-style; CSV keeps the 0
   const show = (v: Cell, k: number) => (typeof v !== 'number' ? v : v === 0 ? '–' : (columns[k].format ?? fmt.num)(v))
   const onCopy = async () => {
-    const ok = await copy(toCsv(columns, total ? [...rows, total] : rows))
+    const ok = await copy(toCsv(columns.map(c => c.label), total ? [...rows, total] : rows))
     if (ok) toast.success(`Copied ${title} as CSV`)
     else toast.error('Copy failed: your browser blocked clipboard access.')
   }

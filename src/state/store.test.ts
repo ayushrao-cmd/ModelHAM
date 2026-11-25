@@ -169,4 +169,32 @@ describe('store', () => {
     expect(st().importScenario(JSON.stringify({ deal: { bidPrice: 2400 } })).ok).toBe(true)
     expect(st().scenarios).toHaveLength(3)
   })
+
+  it('importScenario rejects objects with no known Inputs key, and takes a scenario name', async () => {
+    const { useStore } = await fresh()
+    const st = useStore.getState
+    const bad = st().importScenario(JSON.stringify({ hello: 'world', inputs: 3 }))
+    expect(bad.ok).toBe(false)
+    expect(bad.error).toMatch(/scenario/i)
+    expect(st().importScenario(JSON.stringify({ name: 'Wrapped', inputs: { foo: 1 } })).ok).toBe(false)
+    expect(st().importScenario('[]').ok).toBe(false)
+    expect(st().scenarios).toHaveLength(1)
+    expect(st().importScenario(JSON.stringify({ name: 'Tax only', inputs: { tax: { baseRate: 0.3 } } })).ok).toBe(true)
+    expect(st().scenarios.find(s => s.id === st().activeId)!.name).toBe('Tax only')
+    expect(st().importScenario(JSON.stringify({ targets: { equityIrrHurdle: 0.16 } })).ok).toBe(true)
+    expect(st().scenarios.find(s => s.id === st().activeId)!.name).toBe('Imported scenario')
+  })
+
+  it('setBase makes an existing scenario the base and ignores unknown ids', async () => {
+    const { useStore } = await fresh()
+    const st = useStore.getState
+    const first = st().baseId
+    const id = st().createScenario('Alt')
+    st().setBase(id)
+    expect(st().baseId).toBe(id)
+    st().setBase('nope')
+    expect(st().baseId).toBe(id)
+    st().deleteScenario(id)
+    expect(st().baseId).toBe(first)
+  })
 })

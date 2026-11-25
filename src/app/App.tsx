@@ -7,15 +7,20 @@ import type { SectionId } from '../engine/types'
 import { Build } from '../sections/Build'
 import { Capital } from '../sections/Capital'
 import { Deal } from '../sections/Deal'
+import { CheckFlipToasts, Health } from '../sections/Health'
 import { Income } from '../sections/Income'
 import { Operations } from '../sections/Operations'
-import { SectionHeader } from '../sections/SectionLayout'
+import { Overview } from '../sections/Overview'
+import { Returns } from '../sections/Returns'
+import { Scenarios } from '../sections/Scenarios'
 import { useRoute } from './router'
 import { Brand, Sidebar, SidebarNav } from './Sidebar'
 import { ThemeToggle, Topbar } from './Topbar'
 
-// Overview, Returns, Health and Scenarios are header-only until Task 13.
-const VIEWS: Partial<Record<SectionId, () => JSX.Element>> = { deal: Deal, build: Build, capital: Capital, income: Income, operations: Operations }
+const VIEWS: Record<SectionId, () => JSX.Element> = {
+  overview: Overview, deal: Deal, build: Build, capital: Capital, income: Income, operations: Operations,
+  returns: Returns, health: Health, scenarios: Scenarios,
+}
 
 /** If a stored scenario ever crashes the engine, offer a way out instead of a blank page. */
 class Recover extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -63,10 +68,11 @@ export default function App() {
         <div className="flex min-h-dvh min-w-0 flex-col lg:pl-60">
           <Topbar onMenu={() => setMenuOpen(true)} />
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none sm:px-6 sm:py-8 lg:px-8">
-            {View ? <View key={section} /> : <SectionHeader key={section} id={section} />}
+            <View key={section} />
           </main>
         </div>
         <Toaster position="bottom-right" />
+        <CheckFlipToasts />
       </TooltipProvider>
     </Recover>
   )

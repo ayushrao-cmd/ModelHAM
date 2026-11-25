@@ -111,3 +111,20 @@ export function CheckCard({ check, value }: { check?: Check; value: string }) {
     </Panel>
   )
 }
+
+/** A row of toggle buttons, one pressed. Wraps on narrow screens rather than scrolling. */
+export function Segmented<T extends string>({ label, value, options, onChange, className }: {
+  label: string; value: T; options: { value: NoInfer<T>; label: ReactNode; name?: string }[]; onChange(v: NoInfer<T>): void; className?: string
+}) {
+  return (
+    <div role="group" aria-label={label} className={cn('inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted p-1', className)}>
+      {options.map(o => (
+        <button key={o.value} type="button" aria-pressed={o.value === value} aria-label={o.name} onClick={() => onChange(o.value)}
+          className={cn('inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            o.value === value ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground')}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
