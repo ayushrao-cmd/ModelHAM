@@ -22,7 +22,9 @@ interface Line { key: string; label: string; gstRate: number; net: number[]; epc
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const sCurve = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x)
 
-export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
+/** Build-month phasing and Construction Support receipts. Independent of debt, so callers can size
+ * variable EPC before the IDC fixed point (runModel needs it for first-period insurance). */
+export function supportSchedule(i: Inputs, t: Timeline) {
   const b = i.build, bid = i.deal.bidPrice, n = t.months.length
   // Build days falling in each month (first and last months are partial).
   const days = t.months.map((d, m) => Math.min(d, t.completion) - (m ? t.months[m - 1] + 1 : t.start) + 1)
@@ -44,6 +46,12 @@ export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
     received[k] += tr.shareOfBid * bid * indexFactor(i, t.months[k])
   }
   const variable = received.map((r, m) => r - supportBase[m]) // indexation uplift paid through to the contractor
+  return { days, totalDays, equated, phys, cumPhysical, received, variable }
+}
+
+export function runBuild(i: Inputs, t: Timeline, fp: FirstPeriod): BuildResult {
+  const b = i.build, bid = i.deal.bidPrice, n = t.months.length
+  const { days, totalDays, equated, phys, cumPhysical, received, variable } = supportSchedule(i, t)
   const supportGst = received.map(r => b.gstWorks * r)
 
   const at = (k: number, x: number) => Array.from({ length: n }, (_, m) => (m === k ? x : 0))

@@ -23,6 +23,10 @@ export function omSchedule(i: Inputs): number[] {
   })
 }
 
+/** Completion Payments base: share of bid × indexation at completion. */
+export const completionBase = (i: Inputs, t: Timeline): number =>
+  i.income.completionPctOfBid * i.deal.bidPrice * indexFactor(i, t.completion)
+
 export const annuityRate = (i: Inputs): number => sum(i.income.bankRates) / i.income.bankRates.length + i.income.spread
 
 /** Annual opex at date d, each line inflated from the bid date at its own rate. epcNet = fixed + variable EPC, excl. GST. */
@@ -52,18 +56,18 @@ export function runOperations(i: Inputs, t: Timeline,
   b: Pick<BuildResult, 'debt'|'reserve'|'workingCapital'|'netGstCredit'|'totalUses'|'support'|'supportGst'|'epcVariable'>): OpsPeriod[] {
   const P = t.payments.length, rate = annuityRate(i), om = omSchedule(i), rep = i.capital.repayment
   const tx = i.tax, taxRate = tx.baseRate * (1 + tx.surcharge) * (1 + tx.cess)
-  const completionBase = i.income.completionPctOfBid * i.deal.bidPrice * indexFactor(i, t.completion)
+  const base = completionBase(i, t)
   // Build cost net of support, GST and the released cash (reserve, working capital), straight-line over the periods.
   const amortisation = (b.totalUses - b.support - b.supportGst - b.netGstCredit - b.reserve - b.workingCapital) / P
   const epcNet = i.build.epcFixed + b.epcVariable
   const periodDays = (n: number) => t.payments[n - 1] - (n === 1 ? t.completion : t.payments[n - 2])
   const principalAt = (n: number) => (n <= rep.length ? rep[n - 1] * b.debt : 0)
 
-  let balance = completionBase, debt = b.debt, reserve = b.reserve, gstLeft = b.netGstCredit, losses = 0
+  let balance = base, debt = b.debt, reserve = b.reserve, gstLeft = b.netGstCredit, losses = 0
   return t.payments.map((day, k): OpsPeriod => {
     const n = k + 1, year = Math.ceil(n / PERIODS_PER_YEAR)
     // Income
-    const completionPayment = (i.income.installments[k] ?? 0) * completionBase
+    const completionPayment = (i.income.installments[k] ?? 0) * base
     const interestIncome = balance * rate / PERIODS_PER_YEAR
     const balanceOutstanding = balance - completionPayment
     balance = balanceOutstanding
