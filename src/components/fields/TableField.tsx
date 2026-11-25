@@ -8,8 +8,8 @@ export const COLUMNS: Partial<Record<FieldDef['kind'], Col[]>> = {
 }
 
 /** Small row editor for milestone and tranche lists; each cell commits to `${id}.${row}.${key}`. */
-export function TableField({ def, domId, value, onCommit, describedBy }: {
-  def: FieldDef; domId: string; value: Record<string, number>[]; onCommit(path: string, n: number): void; describedBy?: string
+export function TableField({ def, domId, value, onCommit, describedBy, empty = [] }: {
+  def: FieldDef; domId: string; value: Record<string, number>[]; onCommit(path: string, n: number): void; describedBy?: string; empty?: string[]
 }) {
   const cols = COLUMNS[def.kind]!
   return (
@@ -29,6 +29,7 @@ export function TableField({ def, domId, value, onCommit, describedBy }: {
               return (
                 <td key={c.key} className="py-0.5 pl-1.5 align-top">
                   <NumberField id={cell} kind={c.kind} unit={false} value={row[c.key]} describedBy={describedBy}
+                    empty={empty.includes(`${def.id}.${r}.${c.key}`)}
                     aria-label={`${def.label} ${r + 1}: ${c.label}`}
                     onCommit={n => onCommit(`${def.id}.${r}.${c.key}`, n)} className="[&_input]:h-8 [&_input]:px-2" />
                 </td>

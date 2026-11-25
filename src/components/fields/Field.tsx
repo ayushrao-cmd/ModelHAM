@@ -12,7 +12,8 @@ import type { FieldDef } from '../../engine/types'
 import { fieldById } from '../../fields'
 import { fmt } from '../../lib/format'
 import { getAt } from '../../lib/path'
-import { referenceInputs, useStore } from '../../state/store'
+import { BLANK_INPUTS, under } from '../../state/projects'
+import { activeTemplate, reference, useStore } from '../../state/store'
 import { useModel } from '../../state/useModel'
 import { NumberField } from './NumberField'
 import { formatNumber } from './parse'
@@ -73,11 +74,19 @@ function DateField({ id, value, onCommit, ...aria }: { id: string; value: string
     onChange={e => { setDraft(e.target.value); if (e.target.value) onCommit(e.target.value) }} />
 }
 
+const TAG = { standard: 'MCA standard', policy: 'Standard' } as const
+const TAG_HELP = { standard: 'The HAM model concession agreement value, pre-filled in every new project.',
+  policy: 'A statutory or policy value, pre-filled in every new project.' } as const
+
 /** Renders any FieldDef by kind, with help, changed-vs-base reset, key-lever slider and check messages. */
 /** `labelHidden`: the visible label repeats the card heading; it stays as the accessible name. */
 export function Field({ id, className, labelHidden }: { id: string; className?: string; labelHidden?: boolean }) {
   const value = useStore(s => getAt((s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0]).inputs, id))
-  const baseValue = useStore(s => getAt(referenceInputs(s), id))
+  const baseValue = useStore(s => getAt(reference(s).inputs, id))
+  // Empty leaves (blank projects) render as empty inputs; a reference with no value here means nothing to reset to.
+  const empty = useStore(s => (s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0]).empty)
+  const refEmpty = useStore(s => reference(s).empty)
+  const blank = useStore(s => activeTemplate(s) === 'blank')
   const setInput = useStore(s => s.setInput)
   const resetField = useStore(s => s.resetField)
   const { checks } = useModel()
@@ -92,7 +101,9 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   const tone = worst === 'error' || worst === 'warning' ? worst : undefined
   const describedBy = [def.help && helpId, failing.length && msgId].filter(Boolean).join(' ') || undefined
   const aria = { 'aria-describedby': describedBy, 'aria-invalid': tone ? true : undefined } as const
-  const changed = !same(value, baseValue)
+  const changed = !same(value, baseValue) && !refEmpty.some(under(id))
+  const isEmpty = empty.includes(id)
+  const tag = def.prefill && same(value, getAt(BLANK_INPUTS, id)) ? def.prefill : undefined
   const isList = Array.isArray(value)
   const commit = (n: number) => setInput(id, n)
   const commitAt = (path: string, n: number) => setInput(path, n)
@@ -102,20 +113,22 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   if (def.readOnly) // fixed by the concession agreement: shown, never edited
     control = <Input id={dom} readOnly value={show(def, value)} {...aria} className="bg-muted tabular-nums" />
   else if (NUMERIC.includes(def.kind) && !isList)
-    control = <NumberField id={dom} value={value as number} kind={def.kind} min={def.min} max={def.max} onCommit={commit} describedBy={describedBy} tone={tone} />
+    control = <NumberField id={dom} value={value as number} kind={def.kind} min={def.min} max={def.max} onCommit={commit} describedBy={describedBy} tone={tone}
+      empty={isEmpty} placeholder={isEmpty ? 'Required' : undefined} />
   else if (def.kind === 'years') // a tuple, e.g. the two resurfacing years
     control = (
       <div role="group" aria-labelledby={labelId} {...aria} className="grid grid-cols-2 gap-2">
         {(value as number[]).map((v, k) => (
           <NumberField key={k} id={k ? `${dom}-${k}` : dom} value={v} kind="years" onCommit={n => commitAt(`${id}.${k}`, n)}
+            empty={empty.includes(`${id}.${k}`)} placeholder={empty.includes(`${id}.${k}`) ? 'Required' : undefined}
             describedBy={describedBy} tone={tone} aria-label={`${def.label}: ${k ? 'second' : 'first'}`} />
         ))}
       </div>
     )
   else if (def.kind === 'percentList')
-    control = <div role="group" aria-labelledby={labelId} {...aria}><PercentListField def={def} domId={dom} value={value as number[]} onCommit={commitAt} describedBy={describedBy} /></div>
+    control = <div role="group" aria-labelledby={labelId} {...aria}><PercentListField def={def} domId={dom} value={value as number[]} onCommit={commitAt} describedBy={describedBy} empty={empty} /></div>
   else if (def.kind === 'milestoneList' || def.kind === 'trancheList')
-    control = <div role="group" aria-labelledby={labelId} {...aria}><TableField def={def} domId={dom} value={value as Record<string, number>[]} onCommit={commitAt} describedBy={describedBy} /></div>
+    control = <div role="group" aria-labelledby={labelId} {...aria}><TableField def={def} domId={dom} value={value as Record<string, number>[]} onCommit={commitAt} describedBy={describedBy} empty={empty} /></div>
   else if (def.kind === 'select')
     control = (
       <Select value={value as string} onValueChange={v => setInput(id, v)}>
@@ -126,7 +139,7 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
   else if (def.kind === 'date')
     control = <DateField id={dom} value={value as string} onCommit={v => setInput(id, v)} {...aria} />
   else
-    control = <Input id={dom} value={value as string} onChange={e => setInput(id, e.target.value)} {...aria} className={cn('bg-card', toneCls)} />
+    control = <Input id={dom} value={value as string} placeholder={isEmpty ? 'Required' : undefined} onChange={e => setInput(id, e.target.value)} {...aria} className={cn('bg-card', toneCls)} />
 
   const labelProps = isList ? { id: labelId } : { id: labelId, htmlFor: dom }
   const Label = isList ? 'span' : 'label'
@@ -147,6 +160,11 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
             <TooltipContent className="max-w-64 bg-foreground text-background">{def.help}</TooltipContent>
           </Tooltip>
         )}
+        {tag && !labelHidden && (
+          <span title={TAG_HELP[tag]} className="shrink-0 whitespace-nowrap rounded-sm border px-1.5 text-[11px] font-medium leading-[18px] text-muted-foreground">
+            {TAG[tag]}
+          </span>
+        )}
         {changed && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />}
         {changed && <span className="sr-only">Changed from base</span>}
         {changed && (
@@ -159,7 +177,7 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
       {/* With the label hidden, a lone help icon would float under the card heading, so the help shows as text instead. */}
       {def.help && <p id={helpId} className={labelHidden ? 'm-0 text-xs leading-4 text-muted-foreground' : 'hidden'}>{def.help}</p>}
       <div className="mt-1">{control}</div>
-      {def.key && NUMERIC.includes(def.kind) && !isList && <KeySlider def={def} value={value as number} onCommit={commit} label={def.label} />}
+      {def.key && !blank && NUMERIC.includes(def.kind) && !isList && <KeySlider def={def} value={value as number} onCommit={commit} label={def.label} />}
       {failing.length > 0 && (
         <div id={msgId} className="mt-1.5 space-y-1">
           {failing.map(c => {

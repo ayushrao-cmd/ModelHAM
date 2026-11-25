@@ -6,6 +6,7 @@ import { hrefFor, parseHash, useFocusRequest } from '../app/router'
 import { sectionMeta } from '../app/sections'
 import type { Check } from '../engine/health'
 import type { SectionId } from '../engine/types'
+import { ResultsGate } from '../components/ResultsGate'
 import { useModel } from '../state/useModel'
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -54,15 +55,18 @@ export function SectionHeader({ id }: { id: SectionId }) {
   )
 }
 
-/** Header, an optional full-width strip, then inputs (5/12) beside results (7/12) from 1280px; stacked below. */
+/**
+ * Header, an optional full-width strip, then inputs (5/12) beside results (7/12) from 1280px; stacked below.
+ * Strip and results are results: pass elements whose components read useResult(); they render only for a complete scenario.
+ */
 export function SectionLayout({ id, strip, inputs, results }: { id: SectionId; strip?: ReactNode; inputs: ReactNode; results: ReactNode }) {
   return (
     <div className="space-y-6">
       <SectionHeader id={id} />
-      {strip}
+      {strip && <ResultsGate quiet>{strip}</ResultsGate>}
       <div className="grid gap-6 xl:grid-cols-12">
         <div className="min-w-0 space-y-4 xl:col-span-5">{inputs}</div>
-        <div className="min-w-0 space-y-4 xl:col-span-7">{results}</div>
+        <div className="min-w-0 space-y-4 xl:col-span-7"><ResultsGate>{results}</ResultsGate></div>
       </div>
     </div>
   )

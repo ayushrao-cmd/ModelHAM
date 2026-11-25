@@ -8,9 +8,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { download, exportScenarioJson, exportSchedulesCsv, slug } from '../lib/export'
-import { useStore } from '../state/store'
+import { activeTemplate, useStore } from '../state/store'
 import { useModel } from '../state/useModel'
 import { CommandPalette } from './CommandPalette'
+import { ProjectSwitcher } from './ProjectSwitcher'
 import { hrefFor } from './router'
 import { useTheme } from './theme'
 
@@ -45,13 +46,6 @@ function ScenarioSwitcher() {
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
-
-/** The project the scenarios model, beside the switcher where there is room. */
-function ProjectName() {
-  const name = useStore(s => (s.scenarios.find(x => x.id === s.activeId) ?? s.scenarios[0]).inputs.deal)
-  return <span className="hidden min-w-0 truncate text-sm text-muted-foreground xl:block" title={`${name.projectName} · ${name.authorityName}`}>
-    {name.projectName} · {name.authorityName}</span>
 }
 
 function HealthBadge() {
@@ -99,7 +93,8 @@ function ExportMenu() {
             <Upload aria-hidden="true" />Import scenario…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => download(`${slug(scenario.name)}-schedules.csv`, exportSchedulesCsv(r), 'text/csv')}>
+          {/* Schedules exist only once every input has a value. */}
+          <DropdownMenuItem disabled={!r} onSelect={() => { if (r) download(`${slug(scenario.name)}-schedules.csv`, exportSchedulesCsv(r), 'text/csv') }}>
             <Sheet aria-hidden="true" />Export schedules (CSV)
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -122,16 +117,19 @@ export function ThemeToggle({ className }: { className?: string }) {
 }
 
 export function Topbar({ onMenu }: { onMenu(): void }) {
+  const sample = useStore(s => activeTemplate(s) === 'sample')
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-1.5 border-b bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:gap-3 sm:px-6 lg:px-8">
       <Button variant="ghost" size="icon" className="-ml-2 lg:hidden" onClick={onMenu} aria-label="Open sections">
         <Menu aria-hidden="true" />
       </Button>
+      <ProjectSwitcher />
       <ScenarioSwitcher />
-      <ProjectName />
-      <Badge variant="outline" className="shrink-0 whitespace-nowrap rounded-full border-warning/40 bg-warning/10 px-2 font-medium text-foreground sm:px-2.5">
-        Demo data
-      </Badge>
+      {sample && (
+        <Badge variant="outline" className="shrink-0 whitespace-nowrap rounded-full border-warning/40 bg-warning/10 px-2 font-medium text-foreground sm:px-2.5">
+          Demo data
+        </Badge>
+      )}
       <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
         <CommandPalette />
         <HealthBadge />

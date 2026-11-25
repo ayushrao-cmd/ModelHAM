@@ -13,7 +13,7 @@ import { Field } from './Field'
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} }
 
 /** Ruling 5: stand-in for the Overview KPI (Task 13). */
-function Probe() { return <p data-testid="kpi">{fmt.pct(useModel().active.kpis.equityIrr)}</p> }
+function Probe() { return <p data-testid="kpi">{fmt.pct(useModel().active!.kpis.equityIrr)}</p> }
 
 const active = (id: string) => { const s = useStore.getState(); return getAt(s.scenarios.find(x => x.id === s.activeId)!.inputs, id) }
 const mount = (id: string) => render(<TooltipProvider><Field id={id} /><Probe /></TooltipProvider>)

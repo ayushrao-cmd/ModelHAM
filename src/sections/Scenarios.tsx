@@ -7,10 +7,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { FieldDef, Inputs } from '../engine/types'
+import type { FieldDef } from '../engine/types'
 import { FIELDS } from '../fields'
 import { fmt } from '../lib/format'
-import { getAt } from '../lib/path'
+import { getAt, setAt } from '../lib/path'
 import { type Scenario, useStore } from '../state/store'
 import { resultFor } from '../state/useModel'
 import { KPIS, kpiDelta } from './Overview'
@@ -33,9 +33,14 @@ function show(f: FieldDef, v: unknown, key?: string): string {
   return fmt.pct(v) // percent, and the elements of percent, milestone and tranche lists
 }
 
+type Values = Pick<Scenario, 'inputs' | 'empty'>
+/** The scenario's inputs with every empty leaf removed (shown as '—'), so a neutral placeholder never displays. */
+const withoutEmpty = (s: Values) => s.empty.reduce<unknown>((i, p) => setAt(i, p, undefined), s.inputs) as object
+
 /** Every input that differs between two scenarios; lists compare element by element. */
-export function diffInputs(a: Inputs, b: Inputs) {
+export function diffInputs(sa: Values, sb: Values) {
   const out: { id: string; label: string; a: string; b: string }[] = []
+  const a = withoutEmpty(sa), b = withoutEmpty(sb)
   for (const f of FIELDS) {
     const va = getAt(a, f.id), vb = getAt(b, f.id)
     if (same(va, vb)) continue
@@ -108,8 +113,8 @@ function Compare({ scenarios }: { scenarios: Scenario[] }) {
   const want = compareId ?? activeId
   const b = has(want) && want !== a ? want : (scenarios.find(s => s.id !== a)?.id ?? a)
   const A = scenarios.find(s => s.id === a)!, B = scenarios.find(s => s.id === b)!
-  const ra = resultFor(A.inputs), rb = resultFor(B.inputs)
-  const diffs = diffInputs(A.inputs, B.inputs)
+  const ra = resultFor(A), rb = resultFor(B)
+  const diffs = diffInputs(A, B)
   return (
     <Panel className="space-y-5">
       <h2 className="text-[15px] font-semibold leading-6">Compare</h2>
@@ -128,13 +133,13 @@ function Compare({ scenarios }: { scenarios: Scenario[] }) {
               <th scope="col" className={cn(th, 'text-right')}>B − A</th>
             </tr></thead>
             <tbody>{KPIS.map(k => {
-              const va = k.get(ra), vb = k.get(rb), d = kpiDelta(vb, va)
+              const va = ra && k.get(ra), vb = rb && k.get(rb), d = ra && rb ? kpiDelta(vb, va) : undefined
               const tone = d == null || Math.abs(d) < 1e-9 ? 'text-muted-foreground' : (d > 0) === (k.good === 'up') ? 'text-success' : 'text-destructive'
               return (
                 <tr key={k.key}>
                   <th scope="row" className={cn(td, 'min-w-28 pl-0 text-left font-normal')}>{k.label}</th>
-                  <td className={cn(td, num)}>{k.format(va)}</td>
-                  <td className={cn(td, num)}>{k.format(vb)}</td>
+                  <td className={cn(td, num, !ra && 'text-muted-foreground')}>{ra ? k.format(va) : 'Incomplete'}</td>
+                  <td className={cn(td, num, !rb && 'text-muted-foreground')}>{rb ? k.format(vb) : 'Incomplete'}</td>
                   <td className={cn(td, num, 'font-medium', tone)}>{d == null ? '—' : Math.abs(d) < 1e-9 ? 'Same' : k.formatDelta(d)}</td>
                 </tr>
               )

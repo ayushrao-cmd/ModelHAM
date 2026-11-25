@@ -11,6 +11,7 @@ import { SECTIONS } from '../app/sections'
 import type { Check } from '../engine/health'
 import { fieldById } from '../fields'
 import { useStore } from '../state/store'
+import { FillProgress } from '../components/ResultsGate'
 import { useModel } from '../state/useModel'
 import { SectionHeader, Segmented } from './SectionLayout'
 
@@ -32,16 +33,21 @@ const FLIP_SETTLE_MS = 800 // a burst of edits (typing) toasts once, this long a
 /**
  * Mounted once in the shell: one toast per settled burst of edits that flips any check, compared with the state before
  * the burst, so partial values mid-typing don't toast. Switching scenarios is not an edit, so it resets the baseline.
+ * While the scenario has empty fields its Required checks don't toast; filling the last one toasts once that results are live.
  */
 export function CheckFlipToasts() {
-  const { checks } = useModel()
+  const { checks, active } = useModel()
   const activeId = useStore(s => s.activeId)
-  const settled = useRef<{ activeId: string; pass: Map<string, boolean> } | null>(null)
+  const projectId = useStore(s => s.projectId)
+  const scope = `${projectId}/${activeId}`
+  const complete = active !== null
+  const settled = useRef<{ scope: string; complete: boolean; pass: Map<string, boolean> } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
     clearTimeout(timer.current)
-    const p = settled.current, now = { activeId, pass: new Map(checks.map(c => [c.id, c.pass])) }
-    if (!p || p.activeId !== activeId) { settled.current = now; return }
+    const p = settled.current, now = { scope, complete, pass: new Map(checks.map(c => [c.id, c.pass])) }
+    if (!p || p.scope !== scope || !complete) { settled.current = now; return }
+    if (!p.complete) { settled.current = now; toast.success('All fields filled — results are live'); return }
     timer.current = setTimeout(() => {
       settled.current = now
       const msg = flipSummary(p.pass, checks)
@@ -49,7 +55,7 @@ export function CheckFlipToasts() {
       const worse = checks.some(c => p.pass.get(c.id) === true && !c.pass)
       if (worse) toast.warning(msg); else toast.success(msg)
     }, FLIP_SETTLE_MS)
-  }, [checks, activeId])
+  }, [checks, scope, complete])
   useEffect(() => () => clearTimeout(timer.current), [])
   return null
 }
@@ -98,7 +104,7 @@ function CheckRow({ c }: { c: Check }) {
 }
 
 export function Health() {
-  const { checks, score } = useModel()
+  const { checks, score, missing } = useModel()
   const { param } = useRoute()
   const withChecks = SECTIONS.filter(s => checks.some(c => c.section === s.id))
   const fromHash = param('section')
@@ -134,9 +140,16 @@ export function Health() {
             </div>
           ))}
         </dl>
-        <p className="text-[13px] leading-5 text-muted-foreground sm:ml-auto sm:max-w-xs">
-          Errors make the model wrong or unbankable; warnings need a look; notes are for information.
-        </p>
+        {missing.paths.length ? (
+          <div className="w-full sm:ml-auto sm:max-w-xs">
+            <FillProgress missing={missing} />
+            <p className="mt-2 text-[13px] leading-5 text-muted-foreground">Model checks run once every input has a value.</p>
+          </div>
+        ) : (
+          <p className="text-[13px] leading-5 text-muted-foreground sm:ml-auto sm:max-w-xs">
+            Errors make the model wrong or unbankable; warnings need a look; notes are for information.
+          </p>
+        )}
       </Card>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -11,9 +11,9 @@ const DEBOUNCE_MS = 150
  * A local draft string over a stored number. Valid drafts commit after a short pause or on blur;
  * invalid drafts stay local with an error, so the model never sees them.
  */
-function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit: (n: number) => void) {
+function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit: (n: number) => void, empty: boolean) {
   const bounds = { min, max }
-  const [draft, setDraft] = useState(() => formatNumber(value, kind))
+  const [draft, setDraft] = useState(() => (empty ? '' : formatNumber(value, kind)))
   const [error, setError] = useState<string | null>(null)
   const draftRef = useRef(draft)
   const timer = useRef<ReturnType<typeof setTimeout>>()
@@ -23,13 +23,15 @@ function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit:
   const cancel = () => { clearTimeout(timer.current); flush.current = null }
 
   // The stored value changed elsewhere (reset, slider, scenario switch): show it, unless the draft already means it.
+  // An empty value shows as an empty input: its stored placeholder number is never displayed.
   useEffect(() => {
+    if (empty) { cancel(); show(''); setError(null); return }
     const p = parseNumber(draftRef.current, kind, { min, max })
     if (p.ok && p.value === value) return
     cancel()
     show(formatNumber(value, kind))
     setError(null)
-  }, [value, kind, min, max])
+  }, [value, kind, min, max, empty])
 
   // Do not drop a pending edit if the field unmounts inside the debounce window.
   useEffect(() => () => { clearTimeout(timer.current); flush.current?.() }, [])
@@ -41,7 +43,7 @@ function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit:
       cancel()
       const p = parseNumber(raw, kind, bounds)
       setError(p.ok ? null : p.error)
-      if (!p.ok || p.value === value) return
+      if (!p.ok || (p.value === value && !empty)) return
       flush.current = () => { flush.current = null; commit(p.value) }
       timer.current = setTimeout(() => flush.current?.(), DEBOUNCE_MS)
     },
@@ -49,7 +51,7 @@ function useNumberDraft(value: number, kind: Kind, { min, max }: Bounds, commit:
       cancel()
       const p = parseNumber(draftRef.current, kind, bounds)
       if (!p.ok) return
-      if (p.value !== value) commit(p.value)
+      if (p.value !== value || empty) commit(p.value)
       show(formatNumber(p.value, kind))
     },
   }
@@ -74,10 +76,14 @@ export interface NumberFieldProps {
   unit?: boolean
   className?: string
   'aria-label'?: string
+  /** No value yet: the input starts empty and any typed number, 0 included, fills it. */
+  empty?: boolean
+  placeholder?: string
 }
 
-export function NumberField({ id, value, kind, min, max, onCommit, describedBy, tone, unit = true, className, 'aria-label': ariaLabel }: NumberFieldProps) {
-  const { draft, error, onChange, onBlur } = useNumberDraft(value, kind, { min, max }, onCommit)
+export function NumberField({ id, value, kind, min, max, onCommit, describedBy, tone, unit = true, className, 'aria-label': ariaLabel,
+  empty = false, placeholder }: NumberFieldProps) {
+  const { draft, error, onChange, onBlur } = useNumberDraft(value, kind, { min, max }, onCommit, empty)
   const u = unit ? UNIT[kind] : undefined
   const unitId = `${id}-unit`, errId = `${id}-parse`
   const ids = [u && unitId, error && errId, describedBy].filter(Boolean).join(' ') || undefined
@@ -85,7 +91,7 @@ export function NumberField({ id, value, kind, min, max, onCommit, describedBy, 
   return (
     <div className={className}>
       <div className="relative">
-        <Input id={id} inputMode="decimal" autoComplete="off" spellCheck={false} value={draft} aria-label={ariaLabel}
+        <Input id={id} inputMode="decimal" autoComplete="off" spellCheck={false} value={draft} aria-label={ariaLabel} placeholder={placeholder}
           aria-invalid={bad ? true : undefined} aria-describedby={ids}
           onChange={e => onChange(e.target.value)} onBlur={onBlur}
           className={cn('bg-card text-right tabular-nums', u && PAD[u],

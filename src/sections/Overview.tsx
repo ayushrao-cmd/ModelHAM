@@ -9,7 +9,8 @@ import { SolveCard } from '../components/SolveCard'
 import type { ModelResult } from '../engine/model'
 import { fmt } from '../lib/format'
 import { useStore } from '../state/store'
-import { useModel } from '../state/useModel'
+import { ResultsGate } from '../components/ResultsGate'
+import { useModel, useResult } from '../state/useModel'
 import { jumpTo } from './Health'
 import { Panel, SectionHeader } from './SectionLayout'
 
@@ -85,27 +86,34 @@ function TopIssues() {
   )
 }
 
-export function Overview() {
-  const { active: r, base } = useModel()
+function OverviewResults() {
+  const r = useResult()
+  const { base } = useModel()
   const isBase = useStore(s => s.activeId === s.baseId)
+  return <>
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border shadow-card lg:grid-cols-3">
+      {KPIS.map(k => (
+        <KpiTile key={k.key} label={k.label} value={k.get(r)} format={k.format} good={k.good}
+          delta={isBase || !base ? undefined : kpiDelta(k.get(r), k.get(base))} formatDelta={k.formatDelta}
+          trend={k.trend(r)} trendLabel={k.trendLabel} />
+      ))}
+    </div>
+    <div className="grid gap-4 lg:grid-cols-12">
+      <div className="min-w-0 lg:col-span-5"><SolveCard result={r} /></div>
+      <div className="min-w-0 lg:col-span-7"><TopIssues /></div>
+    </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Panel><SourcesUsesChart result={r} /></Panel>
+      <Panel><DscrChart result={r} /></Panel>
+    </div>
+  </>
+}
+
+export function Overview() {
   return (
     <div className="space-y-6">
       <SectionHeader id="overview" />
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border shadow-card lg:grid-cols-3">
-        {KPIS.map(k => (
-          <KpiTile key={k.key} label={k.label} value={k.get(r)} format={k.format} good={k.good}
-            delta={isBase ? undefined : kpiDelta(k.get(r), k.get(base))} formatDelta={k.formatDelta}
-            trend={k.trend(r)} trendLabel={k.trendLabel} />
-        ))}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-12">
-        <div className="min-w-0 lg:col-span-5"><SolveCard result={r} /></div>
-        <div className="min-w-0 lg:col-span-7"><TopIssues /></div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel><SourcesUsesChart result={r} /></Panel>
-        <Panel><DscrChart result={r} /></Panel>
-      </div>
+      <ResultsGate><OverviewResults /></ResultsGate>
     </div>
   )
 }

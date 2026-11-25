@@ -22,11 +22,35 @@ npm run lint
 npm run build      # static site in dist/, deploy anywhere
 ```
 
+## Projects: sample and blank
+
+Each **project** is one bid with its own scenarios (base, compare, active). The project menu in the top bar
+switches, creates, duplicates, renames and deletes projects (never the last one).
+
+- **Sample project**: the demo data above, tagged "Demo data" in the top bar.
+- **Blank project**: your own bid. It never shows a demo number. Every input is in one of three classes
+  (`FieldDef.prefill` in `src/fields.ts`):
+  - **Project data, starts empty**: bid price, estimate, length, dates, build days, EPC and lump-sum soft costs,
+    milestones, funding split, loan rates, repayment schedule, reference lending rates, operating costs,
+    maintenance, resurfacing years, insurance, inflation, WPI/CPI, project and authority name.
+  - **HAM concession standard, pre-filled, tagged "MCA standard"**: Operate Years (15, fixed), Construction
+    Support and its tranches, Completion Payments and the 30-installment schedule, first-payment lag, annuity
+    spread, O&M payment rates, WPI weight, Performance Security and its commission.
+  - **Statutory / policy, pre-filled, tagged "Standard"**: GST, tax rate, surcharge and cess, leverage and DSCR
+    warning levels, max rate-quote age, equity IRR hurdle, and the percentage-based soft costs (pre-bid
+    allowance, SPV formation, admin, IE fee, fund-raising fee).
+  - Selects (pavement type, EPC phasing) keep a default choice.
+
+  Empty inputs show "Required". The engine does not run until every value is filled: results, charts and KPIs
+  are replaced by a card listing the missing fields (as links) with progress, and Health shows only the
+  "Required" checks. Scenario JSON export carries the empty list; import goes into the active project.
+
 ## Saved data
 
-Scenarios and the theme choice are saved in browser cookies (`milestone.scenarios.v1.*`, `milestone.theme.*`),
-so they survive refreshes and restarts until you clear cookies for the site. Only fields that differ from the
-defaults are stored, split across ~4 KB cookies. Browsers cap cookie lifetime (Chrome: 400 days, renewed on every
+Projects, their scenarios and the theme choice are saved in browser cookies (`milestone.scenarios.v1.*`,
+`milestone.theme.*`), so they survive refreshes and restarts until you clear cookies for the site. Each scenario
+stores only the fields that differ from its project's template (demo defaults or the blank template) plus its
+empty fields, split across ~4 KB cookies. Saves from before projects existed load as one sample project. Browsers cap cookie lifetime (Chrome: 400 days, renewed on every
 save; Safari: 7 days for script-set cookies). Use Export → scenario JSON for a permanent copy.
 
 ## App structure
@@ -35,7 +59,7 @@ save; Safari: 7 days for script-set cookies). Use Export → scenario JSON for a
 |---|---|
 | `src/engine/` | Pure, deterministic TypeScript model: timeline, build-period sources & uses with the interest-during-build (IDC) fixed point, operations, debt, tax, XIRR returns, health checks, bid-price solver, tornado sensitivity |
 | `src/fields.ts` | Field registry: label, unit, range, help and section for every input |
-| `src/state/` | Zustand store (scenarios, active scenario) persisted to browser cookies, and the memoised `useModel` hook |
+| `src/state/` | Zustand store (projects, scenarios) persisted to browser cookies; blank template and empty-field helpers (`projects.ts`); the memoised `useModel` hook (null results while a scenario is incomplete) |
 | `src/app/` | Shell: hash router (`#/overview`, `#/deal`, …), sidebar, top bar, ⌘K command palette, theme |
 | `src/sections/` | One screen per section: Overview, Deal & Timeline, Build, Capital, Income, Operations, Returns, Health, Scenarios |
 | `src/components/` | Typed input fields, KPI tiles, data tables, solve card, shadcn/ui primitives |
