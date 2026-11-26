@@ -59,12 +59,12 @@ describe('Returns', () => {
 
 describe('Health', () => {
   it('filters by ?section= and by status', () => {
-    window.location.hash = '#/health?section=capital'
+    window.location.hash = '#/health?section=operations'
     wrap(<Health />)
     const groups = screen.getAllByRole('region', { name: /checks$/ })
-    expect(groups.map(g => g.getAttribute('aria-label'))).toEqual(['Capital checks'])
-    const items = () => within(screen.getByRole('region', { name: 'Capital checks' })).getAllByRole('listitem')
-    expect(items().some(li => !li.textContent!.startsWith('Passed'))).toBe(true) // defaults fail a capital warning
+    expect(groups.map(g => g.getAttribute('aria-label'))).toEqual(['Operations checks'])
+    const items = () => within(screen.getByRole('region', { name: 'Operations checks' })).getAllByRole('listitem')
+    expect(items().some(li => !li.textContent!.startsWith('Passed'))).toBe(true) // defaults fail the O&M margin warning
     fireEvent.click(screen.getByRole('button', { name: /^Passed/ }))
     expect(items().length).toBeGreaterThan(0)
     expect(items().every(li => li.textContent!.startsWith('Passed'))).toBe(true)
@@ -86,7 +86,7 @@ describe('Health', () => {
     render(<CheckFlipToasts />)
     act(() => useStore.getState().setInput('deal.bidPrice', 1800)) // mid-typing value that fails DSCR
     act(() => { vi.advanceTimersByTime(300) })
-    act(() => useStore.getState().setInput('deal.bidPrice', 2250))
+    act(() => useStore.getState().setInput('deal.bidPrice', 2260))
     act(() => { vi.advanceTimersByTime(1000) })
     expect(warn).not.toHaveBeenCalled()
     expect(ok).not.toHaveBeenCalled()

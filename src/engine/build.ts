@@ -40,12 +40,17 @@ export function supportSchedule(i: Inputs, t: Timeline) {
   acc = 0
   const cumPhysical = phys.map(w => (acc += w))
 
-  // Construction Support: pctOfBid × bid split across tranches by weight; tranche k lands in the first month reaching its progress.
+  // Construction Support: pctOfBid × bid split across tranches by weight. A tranche is earned in the first month reaching
+  // its progress and received lagDays after that month ends (certification and release), in the month containing that day.
   const supportBase = new Array<number>(n).fill(0), received = new Array<number>(n).fill(0)
   const weights = sum(i.support.tranches.map(tr => tr.shareOfBid))
+  const lag = Math.max(0, i.support.lagDays || 0)
   for (const tr of n && weights > 0 ? i.support.tranches : []) {
     const found = cumPhysical.findIndex(c => c >= tr.progress)
-    const k = found < 0 ? n - 1 : found // ponytail: float shortfall on a 100% tranche lands in the last month
+    const earned = found < 0 ? n - 1 : found // ponytail: float shortfall on a 100% tranche lands in the last month
+    const paid = t.months.findIndex(d => d >= t.months[earned] + lag)
+    // ponytail: a receipt that would fall after completion is taken in the last build month, so sources still equal uses
+    const k = paid < 0 ? n - 1 : paid
     const amount = i.support.pctOfBid * bid * tr.shareOfBid / weights
     supportBase[k] += amount
     received[k] += amount * indexFactor(i, t.months[k])

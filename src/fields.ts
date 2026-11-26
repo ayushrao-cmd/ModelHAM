@@ -109,6 +109,8 @@ export const FIELDS: FieldDef[] = [
   tax('tax.surcharge', 'Surcharge', 'percent', 'Surcharge on tax.', { min: 0, max: 0.5, step: 0.01, prefill: 'policy' }),
   tax('tax.cess', 'Cess', 'percent', 'Health and education cess on tax and surcharge.', { min: 0, max: 0.2, step: 0.01, prefill: 'policy' }),
   tgt('targets.equityIrrHurdle', 'Equity IRR Hurdle', 'percent', 'Target equity return; used by the Solve Bid Price control and Health.', { min: 0, max: 0.5, step: 0.005, prefill: 'policy' }),
+  // Appended, not inserted (FIELDS order is pinned); shown after Support Tranches via `after`.
+  struct('support.lagDays', 'Support Payment Lag', 'days', 'Days from the end of the month a tranche is earned to the month it is received (engineer certification and Authority release). A receipt that would fall after completion is taken in the last build month; capped at 90 days so build funding still balances.', { min: 0, max: 90, step: 5, prefill: 'policy', after: 'support.tranches' }),
 ]
 
 const byId = new Map(FIELDS.map(x => [x.id, x]))

@@ -5,9 +5,10 @@ import { Field, WIDE } from './fields/Field'
 
 const LISTS: FieldDef['kind'][] = ['percentList', 'milestoneList', 'trancheList']
 
-/** A card of one input group's fields, in FIELDS order. Lists and text take the full width. */
+/** A card of one input group's fields, in FIELDS order (a field with `after` follows that field). Lists and text take the full width. */
 export function InputGroup({ section, group }: { section: SectionId; group: string }) {
-  const fields = FIELDS.filter(f => f.section === section && f.group === group)
+  const all = FIELDS.filter(f => f.section === section && f.group === group)
+  const fields = all.filter(f => !f.after).flatMap(f => [f, ...all.filter(x => x.after === f.id)])
   const headingId = `group-${section}-${group.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   return (
     <Card role="region" aria-labelledby={headingId} className="shadow-card">

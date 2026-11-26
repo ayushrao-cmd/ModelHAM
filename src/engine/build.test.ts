@@ -8,6 +8,12 @@ const firstPeriod = { debtService: (d: number) => d * 0.07, opex: 7, interest: (
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 /** A tranche's share of bid: Construction Support % split by weight. */
 const weightShare = (tr: { shareOfBid: number }) => i.support.pctOfBid * tr.shareOfBid / sum(i.support.tranches.map(x => x.shareOfBid))
+/** Month a tranche is received: lagDays after the end of the month that first reaches its progress. */
+const receivedIn = (r: { months: { day: number; cumPhysical: number }[] }, progress: number, lag = i.support.lagDays) => {
+  const earned = r.months.findIndex(m => m.cumPhysical >= progress)
+  const paid = r.months.findIndex(m => m.day >= r.months[earned].day + lag)
+  return paid < 0 ? r.months.length - 1 : paid
+}
 
 describe('runBuild (defaults)', () => {
   const t = buildTimeline(i)
@@ -16,7 +22,7 @@ describe('runBuild (defaults)', () => {
 
   it('EPC = fixed incl. GST + variable (indexation pass-through)', () => {
     const variable = line('epcVariable')
-    const landing = i.support.tranches.map(tr => r.months.findIndex(m => m.cumPhysical >= tr.progress))
+    const landing = i.support.tranches.map(tr => receivedIn(r, tr.progress))
     const expectedVar = sum(i.support.tranches.map((tr, k) =>
       weightShare(tr) * i.deal.bidPrice * (indexFactor(i, t.months[landing[k]]) - 1)))
     expect(variable.net).toBeCloseTo(expectedVar, 6)
@@ -60,15 +66,27 @@ describe('runBuild (defaults)', () => {
     expect(r.workingCapital).toBeCloseTo(firstPeriod.opex + firstPeriod.interest(r.debt), 1)
   })
 
-  it('support tranches land at first month reaching progress', () => {
+  it('support tranches land lagDays after the first month reaching progress', () => {
     i.support.tranches.forEach(tr => {
-      const k = r.months.findIndex(m => m.cumPhysical >= tr.progress)
+      const k = receivedIn(r, tr.progress)
       expect(k).toBeGreaterThanOrEqual(0)
       expect(r.months[k].supportReceived).toBeGreaterThan(0)
       expect(r.months[k].supportGst).toBeCloseTo(i.build.gstWorks * r.months[k].supportReceived, 9)
     })
-    const landed = new Set(i.support.tranches.map(tr => r.months.findIndex(m => m.cumPhysical >= tr.progress)))
+    const landed = new Set(i.support.tranches.map(tr => receivedIn(r, tr.progress)))
     r.months.forEach((m, k) => { if (!landed.has(k)) expect(m.supportReceived).toBe(0) })
+  })
+
+  it('support lag: 0 pays in the earned month, a long lag is capped at the last build month', () => {
+    const at = (lag: number) => runBuild(setAt(i, 'support.lagDays', lag), t, firstPeriod)
+    const zero = at(0), max = at(90), long = at(10_000), n = r.months.length
+    i.support.tranches.forEach(tr => {
+      const k = zero.months.findIndex(m => m.cumPhysical >= tr.progress)
+      expect(zero.months[k].supportReceived).toBeGreaterThan(0)
+    })
+    expect(long.months.slice(0, n - 1).every(m => m.supportReceived === 0)).toBe(true)
+    for (const x of [zero, max]) expect(Math.abs(x.support + x.supportGst + x.equity + x.debt - x.totalUses)).toBeLessThan(0.01)
+    expect(r.idc).toBeGreaterThan(zero.idc) // later support means more debt outstanding during the build
   })
 
   it('physical progress reaches 100%, cash never negative', () => {

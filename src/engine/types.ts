@@ -10,7 +10,7 @@ export interface Inputs {
            fundRaisingPctOfDebt: number; financeLegal: number; contingency: number; preBid: number; preBidMiscPct: number;
            spvFormationPctOfShareCapital: number; patrolCapital: number; patrolRental: number;
            perfSecurityPctOfBid: number; perfSecurityCommissionPa: number; phasing: 'equated'|'sCurve' }
-  support: { pctOfBid: number; tranches: { progress: number; shareOfBid: number }[] }
+  support: { pctOfBid: number; tranches: { progress: number; shareOfBid: number }[]; lagDays: number }
   capital: { equityPct: number; upfrontEquityPct: number; shareCapitalPct: number; buildRate: number; operateRate: number;
              repayment: number[]; maxLeverage: number; dscrWarn: number }
   income: { completionPctOfBid: number; installments: number[]; firstPaymentLagDays: number; bankRates: number[];
@@ -27,4 +27,6 @@ export interface FieldDef { id: string; label: string; section: SectionId;
   group: string; kind: 'money'|'percent'|'days'|'years'|'number'|'date'|'text'|'select'|'percentList'|'milestoneList'|'trancheList'; min?: number; max?: number;
   step?: number; help?: string; options?: { value: string; label: string }[]; key?: boolean; readOnly?: boolean
   /** Pre-filled in a blank project: an HAM concession standard (MCA) or a statutory/policy value. Unset = project data, starts empty. */
-  prefill?: 'standard' | 'policy' }
+  prefill?: 'standard' | 'policy'
+  /** Display right after this field id in its group (FIELDS order itself is pinned). */
+  after?: string }
