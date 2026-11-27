@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addMonths } from '../dates'
-import { row, rowRaw, inputsFor, fromSerial, expectSeries, expectClose } from './golden'
+import { row, rowRaw, inputsFor, fromSerial, expectSeries, expectClose, opsFor } from './golden'
 import { buildGrid } from './grid'
 import { constructionUses, grantSchedule, stlSchedule, derivedCosts, runConstruction, type UseKey,
   type ConstructionMonth } from './construction'
@@ -110,10 +110,6 @@ describe('v16 construction: sample targets (A §6)', () => {
     expectClose(derivedCosts(b, buildGrid(b)).patrolRental, 1.128, 1e-12, 'patrol 1.128')
   })
 })
-
-/** Fin-IGAAP D331 (interest DSR) and COP-MOF r314 (O&M COD → 1st annuity) from golden until Task 13 wires ops in. */
-const opsFor = (set: string) =>
-  ({ interestDsr: row(set, 'Fin-IGAAP!331').total, postCodOpex: row(set, 'COP-MOF!314').values })
 
 /** Monthly funding series → COP-MOF row. */
 const MONTHS: [keyof ConstructionMonth, number][] = [

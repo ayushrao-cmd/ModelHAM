@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Inputs } from '../types'
+import type { ConstructionOps } from './construction'
 import { V16_SAMPLE } from './sample'
 
 export interface GoldenRow {
@@ -69,3 +70,7 @@ export function inputsFor(set: string): Inputs {
   }
   return i as unknown as Inputs
 }
+
+/** Fin-IGAAP D331 (interest DSR) and COP-MOF r314 (O&M COD → 1st annuity) from golden until Task 13 wires ops in. */
+export const opsFor = (set: string): ConstructionOps =>
+  ({ interestDsr: row(set, 'Fin-IGAAP!331').total, postCodOpex: row(set, 'COP-MOF!314').values })
