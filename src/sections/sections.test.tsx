@@ -1,13 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { DEFAULT_INPUTS } from '../engine/defaults'
+import { runModel } from '../engine/model'
 import { useStore } from '../state/store'
 import { Build } from './Build'
 import { Capital } from './Capital'
 import { Deal } from './Deal'
 import { Income } from './Income'
 import { Operations } from './Operations'
-import { Phasing } from './Phasing'
+import { Phasing, PhasingView } from './Phasing'
 import { Statements } from './Statements'
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } // jsdom lacks it
@@ -73,10 +75,32 @@ describe('sections', () => {
     expect(screen.getByLabelText('Patrol Rental (per month)')).toBeTruthy()
   })
 
-  it('Phasing offers the Schedule G option and the manual phasing list', () => {
+  it('Phasing offers the Schedule G option (choosing it sets scheduleG) and the manual phasing list', () => {
+    // jsdom lacks what Radix Select calls on open
+    Element.prototype.hasPointerCapture ??= () => false
+    Element.prototype.releasePointerCapture ??= () => {}
+    Element.prototype.scrollIntoView ??= () => {}
     wrap(<Phasing />)
     expect(screen.getByText('Manual EPC Phasing')).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Monthly construction schedule' }).textContent).toContain('(after COD)')
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'EPC Phasing' }), { key: 'Enter' })
+    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Manual monthly %', 'Equated monthly', 'Schedule G'])
+    fireEvent.click(screen.getByRole('option', { name: 'Schedule G' }))
+    const s = useStore.getState()
+    expect(s.scenarios.find(x => x.id === s.activeId)!.inputs.build.phasing).toBe('scheduleG')
+  })
+
+  it('Build Days 0 gates every result screen instead of crashing; Phasing renders an empty schedule as an empty state', () => {
+    useStore.getState().setInput('deal.buildDays', 0)
+    for (const View of [Phasing, Capital, Build]) {
+      const { unmount } = wrap(<View />)
+      expect(screen.getByRole('alert').textContent).toMatch(/There are no build months: Build Days is 0/)
+      unmount()
+    }
+    const r = runModel(DEFAULT_INPUTS)
+    const empty = { ...r, grid: { ...r.grid, periods: [] }, construction: { ...r.construction, months: [] } }
+    wrap(<PhasingView r={empty} />)
+    expect(screen.getByText(/No build months/)).toBeTruthy()
   })
 
   it.each([['Phasing', Phasing], ['Statements', Statements]])('%s sits behind the results gate in a blank project', (_, View) => {

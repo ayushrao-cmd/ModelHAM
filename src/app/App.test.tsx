@@ -57,4 +57,12 @@ describe('MethodNotice', () => {
     render(<MethodNotice />) // a reload
     expect(screen.queryByRole('link', { name: 'See the method notes' })).toBeNull()
   })
+
+  it('stays hidden when cookies do not persist (a write that does not read back)', () => {
+    cookies.remove(NOTICE_KEY)
+    const set = vi.spyOn(cookies, 'set').mockImplementation(() => {}) // blocked: writes vanish
+    render(<MethodNotice />)
+    expect(screen.queryByRole('link', { name: 'See the method notes' })).toBeNull()
+    set.mockRestore()
+  })
 })

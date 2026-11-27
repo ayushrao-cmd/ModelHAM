@@ -65,8 +65,20 @@ describe('Returns', () => {
     expect(irr('Project, post-tax (annual)')).toContain('10.43%')
     expect(screen.getByLabelText('Debt service coverage ratio (DSCR), by financial year')).toBeTruthy()
     expect(screen.getByLabelText('Equity IRR Hurdle')).toBeTruthy()
-    expect(container.querySelectorAll('figure').length).toBeGreaterThanOrEqual(3)
     expect(container.textContent).not.toMatch(/NaN|undefined/)
+  })
+
+  it('works out the sensitivities only once the inputs settle, keeping the previous chart meanwhile', () => {
+    vi.useFakeTimers()
+    const { container } = wrap(<Returns />)
+    expect(screen.getByText('Working out the sensitivities…')).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getByLabelText(/^Sensitivity: result for ±10% on each driver/)).toBeTruthy()
+    expect(container.querySelectorAll('figure').length).toBeGreaterThanOrEqual(3)
+    act(() => useStore.getState().setInput('deal.bidPrice', 2300)) // an edit: old bars stay, marked busy
+    expect(container.querySelector('[aria-busy="true"] figure')).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull()
   })
 })
 
