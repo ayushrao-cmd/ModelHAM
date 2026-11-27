@@ -1,5 +1,6 @@
 // Engine results for the active and base scenarios, recomputed only when an Inputs object changes identity.
-// The engine never runs on an incomplete scenario, nor on one it cannot place in time (an invalid bid date): its result
+// The engine never runs on an incomplete scenario, nor on one it cannot place in time (an invalid bid date, no build
+// months): its result
 // is null and its checks are the Required checks, or the blocking ones.
 import { useMemo } from 'react'
 import { blockingChecks, healthScore, modelRunCheck, runChecks, type Check } from '../engine/health'
@@ -9,12 +10,20 @@ import { type Missing, missingOf, requiredChecks } from './projects'
 import { type Scenario, useStore } from './store'
 
 interface Run { result: ModelResult | null; blocked: Check[] }
+/** Inputs the model cannot give a meaningful result for: an invalid bid date (the engine throws) or no build months
+ *  (Build Days below 1: no construction periods, which the screens and the build-period checks assume). */
+function blocking(i: Inputs): Check[] {
+  const days = i.deal.buildDays
+  return [...blockingChecks(i), ...(days >= 1 ? [] : [{ id: 'build-period', title: 'Build period has months', section: 'deal' as const,
+    fieldId: 'deal.buildDays', severity: 'error' as const, pass: false,
+    message: `There are no build months: Build Days is ${Number.isFinite(days) ? days : 'not a number'}, so construction never runs and the model can't run.` }])]
+}
 // Shared across every component that calls useModel (per-component useMemo alone would rerun the engine per caller).
 const runs = new WeakMap<Inputs, Run>()
 function runOf(i: Inputs): Run {
   let r = runs.get(i)
   if (!r) {
-    const blocked = blockingChecks(i)
+    const blocked = blocking(i)
     // The engine throws on dates it cannot place; that must never reach React (it would show the Recover screen).
     if (blocked.length) r = { result: null, blocked }
     else try { r = { result: runModel(i), blocked: [] } } catch (e) { r = { result: null, blocked: [modelRunCheck(e)] } }

@@ -6,6 +6,7 @@ import { shortMonth } from '../charts/theme'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
 import { toIso } from '../engine/dates'
+import type { ModelResult } from '../engine/model'
 import { fmt } from '../lib/format'
 import { useResult } from '../state/useModel'
 import { Panel, SectionLayout, Stats } from './SectionLayout'
@@ -15,10 +16,14 @@ const pct = (n: number) => fmt.pct(n)
 const month = (d: number) => shortMonth(toIso(d))
 
 function PhasingResults() {
-  const r = useResult()
+  return <PhasingView r={useResult()} />
+}
+
+/** The schedule for a result; with no construction months (a result the gate would normally stop) an empty state. */
+export function PhasingView({ r }: { r: ModelResult }) {
   const all = useMemo(() => phasingRows(r), [r])
   const rows = all.filter(x => x.kind === 'construction')
-  if (!rows.length) return <Panel><p className="text-sm text-muted-foreground">No build months: set Build Days on Deal & Timeline.</p></Panel>
+  if (!rows.length || !all.length) return <Panel><p className="text-sm text-muted-foreground">No build months: set Build Days on Deal & Timeline.</p></Panel>
   const peak = rows.reduce((a, x) => (x.totalCost > a.totalCost ? x : a))
   const receipts = rows.filter(x => x.support > 0)
   const total = (f: (x: PhasingRow) => number) => sum(rows.map(f))

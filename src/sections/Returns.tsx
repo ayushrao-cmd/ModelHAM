@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DscrChart } from '../charts/DscrChart'
 import { EquityWaterfallChart } from '../charts/EquityWaterfallChart'
 import { TornadoChart } from '../charts/TornadoChart'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
 import type { ModelResult } from '../engine/model'
-import { tornado } from '../engine/sensitivity'
+import { type TornadoBar, tornado } from '../engine/sensitivity'
+import type { Inputs } from '../engine/types'
 import { fmt } from '../lib/format'
 import { useStore } from '../state/store'
 import { ResultsGate } from '../components/ResultsGate'
@@ -13,6 +14,7 @@ import { useModel, useResult } from '../state/useModel'
 import { Panel, SectionLayout, Segmented } from './SectionLayout'
 
 type Metric = 'equityIrr' | 'dscrMin'
+const TORNADO_SETTLE_MS = 400 // after the last edit
 const METRICS: Record<Metric, { label: string; get(r: ModelResult): number | null; format(n: number | null): string }> = {
   equityIrr: { label: 'Equity IRR', get: r => r.kpis.equityIrr, format: n => fmt.pct(n) },
   dscrMin: { label: 'Min DSCR', get: r => r.kpis.dscrMin, format: fmt.x },
@@ -46,8 +48,15 @@ function IrrTable() {
 function ReturnsResults() {
   const r = useResult()
   const [metric, setMetric] = useState<Metric>('equityIrr')
-  // 13 model runs: only when the inputs or the metric change.
-  const bars = useMemo(() => tornado(r.inputs, METRICS[metric].get), [r.inputs, metric])
+  // 13 model runs (about a second): only once the inputs or the metric have settled, so typing stays responsive.
+  // Until then the previous bars stay, marked as updating.
+  const [done, setDone] = useState<{ for: Inputs; metric: Metric; bars: TornadoBar[] } | null>(null)
+  useEffect(() => {
+    if (done?.for === r.inputs && done.metric === metric) return
+    const t = setTimeout(() => setDone({ for: r.inputs, metric, bars: tornado(r.inputs, METRICS[metric].get) }), TORNADO_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [r.inputs, metric, done])
+  const stale = !done || done.for !== r.inputs || done.metric !== metric
   return <>
     <Panel><DscrChart result={r} /></Panel>
     <Panel><EquityWaterfallChart result={r} /></Panel>
@@ -57,7 +66,10 @@ function ReturnsResults() {
         <Segmented label="Sensitivity metric" value={metric} onChange={setMetric}
           options={(Object.keys(METRICS) as Metric[]).map(m => ({ value: m, label: METRICS[m].label }))} />
       </div>
-      <TornadoChart bars={bars} format={METRICS[metric].format} />
+      <div aria-busy={stale} className={stale ? 'opacity-60 motion-safe:transition-opacity' : undefined}>
+        {done && done.metric === metric ? <TornadoChart bars={done.bars} format={METRICS[metric].format} />
+          : <p role="status" className="py-10 text-center text-sm text-muted-foreground">Working out the sensitivities…</p>}
+      </div>
     </Panel>
   </>
 }
