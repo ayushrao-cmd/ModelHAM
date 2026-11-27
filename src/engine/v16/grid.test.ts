@@ -167,6 +167,6 @@ describe('v16 grid: invalid dates throw instead of looping', () => {
   }
   it('a non-finite derived date (first-payment lag NaN)', () => {
     const i = { ...V16_SAMPLE, income: { ...V16_SAMPLE.income, firstPaymentLagDays: NaN } }
-    expect(() => buildGrid(i)).toThrow(/v16 grid: invalid dates/)
+    expect(() => buildGrid(i)).toThrow(/v16 grid: invalid or out-of-range date/)
   })
 })

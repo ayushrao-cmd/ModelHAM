@@ -5,10 +5,10 @@ import type { ConcessionYear, Day, Grid, Period } from './types'
 /** 'Fin Set'!C49: the fixed year basis. */
 export const YEAR = 365
 
-/** Days in the FY ending `fy` (31 March): 365 or 366 ('Fin Set'!F49:BK49). */
 /** Excel's calendar, 1900-01-01 .. 9999-12-31 (also keeps EDATE/EOMONTH inside JS Date's range). */
 const MIN_DAY = toDay('1900-01-01'), MAX_DAY = toDay('9999-12-31')
 
+/** Days in the FY ending `fy` (31 March): 365 or 366 ('Fin Set'!F49:BK49). */
 export const daysInFy = (fy: Day): number => fy - addMonths(fy, -12)
 
 /**
@@ -29,7 +29,7 @@ export function buildGrid(i: Inputs): Grid {
   // (blank, or a non-date such as 2026-02-30) or a non-finite day count throws here instead of looping forever.
   if (!isIsoDate(deal.bidDate)) throw new Error(`v16 grid: invalid bid date "${deal.bidDate}"`)
   if (![appointed, constructionEnd, firstAnnuity, concessionEnd].every((d) => d >= MIN_DAY && d <= MAX_DAY))
-    throw new Error('v16 grid: invalid dates (a day count or the operation years is not a finite number)')
+    throw new Error('v16 grid: invalid or out-of-range date (a day count or the operation years is not a finite number)')
 
   // COP-MOF r7/r8/r12/r13: calendar-month slices, construction capped at I12, then post-COD capped at K12.
   // (H8's `H7 <= DB!$I$11` compares a date with a text label, so it is always TRUE in Excel.)

@@ -104,16 +104,83 @@ describe('v16 funds: sample headline values (brief)', () => {
 })
 
 describe('v16 funds: DSR top-ups capped by available cash (never binds at the golden sets)', () => {
-  it('cash available = debt service: no interest top-up, releases unlimited', () => {
-    const i = inputsFor('sample'), g = buildGrid(i), c = runConstruction(i, g, opsFor('sample'))
-    const rev = runRevenue(i, g, c), opex = runOpex(i, g, sum(grantSchedule(i, g).pim)), debt = runDebt(i, g, c)
-    const service = debt.interest.map((v, k) => v + debt.repayment[k]) // r141
-    const f = runFunds(i, g, c, rev, opex, debt, neg(row('sample', 'Fin-IGAAP!35').values), service)
-    const k31 = g.fys.findIndex((d) => new Date(d * 86_400_000).getUTCFullYear() === 2031)
+  const i = inputsFor('sample'), g = buildGrid(i), c = runConstruction(i, g, opsFor('sample'))
+  const rev = runRevenue(i, g, c), opex = runOpex(i, g, sum(grantSchedule(i, g).pim)), debt0 = runDebt(i, g, c)
+  const tax = neg(row('sample', 'Fin-IGAAP!35').values)
+  const k31 = g.fys.findIndex((d) => new Date(d * 86_400_000).getUTCFullYear() === 2031), k32 = k31 + 1, k33 = k31 + 2
+  /** Cash available for DSCR = debt service (r141) + `x`, so r328 = x in every FY with an annuity. */
+  const run = (x: number, debt = debt0) =>
+    runFunds(i, g, c, rev, opex, debt, tax, debt.interest.map((v, k) => v + debt.repayment[k] + x))
+  // H331, H347 as computed (the headline test pins them to golden at 1e-6).
+  const cod = run(0), codI = sum(cod.dsrInterest.funded), codP = sum(cod.dsrPrincipal.funded)
+
+  it('cash = debt service: no interest top-up, releases unlimited', () => {
+    const f = run(0)
     expect(f.fundsAvailable.every((v) => Math.abs(v) < 1e-9)).toBe(true)
     expect(f.dsrInterest.setAside.every((v) => v <= 1e-12)).toBe(true)
-    // r344 = r335 carries the interest ledger's opening: a release there can fund a principal top-up.
-    expectClose(f.dsrPrincipal.closing[k31], 14.853745897287556, 1e-6, 'principal DSR stays at the COD funding')
-    expectClose(f.dsrInterest.setAside[k31 + 1], 42.922747 - 45.076993, 1e-5, 'FY32 release still happens')
+    expectClose(f.dsrPrincipal.closing[k31], codP, 1e-6, 'principal DSR stays at the COD funding')
+    expectClose(f.dsrInterest.setAside[k32], f.dsrInterestRequired[k32] - codI, 1e-6, 'FY32 release')
+  })
+
+  it('partial shortfall (2 of the 4.95 FY31 principal top-up): created, released, carried and shortfall rows', () => {
+    const f = run(2), reqI = f.dsrInterestRequired, reqP = f.dsrPrincipalRequired
+    expectClose(reqI[k31], codI, 1e-6, 'FY31 interest need is the COD funding')
+    // FY31: interest needs nothing; the 2 carries to the principal ledger, which is 2.95 short.
+    expectClose(f.dsrInterest.setAside[k31], 0, 1e-9, 'r332 FY31')
+    expectClose(f.dsrInterestCarried[k31], 2, 1e-9, 'r335 FY31')
+    expectClose(f.dsrInterestShortfall[k31], 0, 0, 'r336 FY31')
+    expectClose(f.dsrPrincipal.setAside[k31], 2, 1e-9, 'r348 FY31 capped')
+    expectClose(f.dsrPrincipal.closing[k31], codP + 2, 1e-9, 'r349 FY31')
+    expectClose(f.dsrPrincipalCarried[k31], 2 + codP - reqP[k31], 1e-9, 'r351 FY31')
+    expectClose(f.dsrPrincipalShortfall[k31], 2 + codP - reqP[k31], 1e-9, 'r352 FY31')
+    expectClose(f.dsrPrincipalShortfall[k31], -2.951249, 1e-6, 'r352 FY31 value')
+    // FY32: the interest DSR releases 2.15 (unlimited), and r344 = r335 carries that release plus the cash 2 into the
+    // principal ledger: a principal top-up of 4.15 funded partly by the interest release.
+    const release = reqI[k32] - codI
+    expectClose(f.dsrInterest.setAside[k32], release, 1e-9, 'r332 FY32 release')
+    expect(release).toBeLessThan(-2)
+    expectClose(f.dsrInterestCarried[k32], 2 - release, 1e-9, 'r335 FY32')
+    expectClose(f.dsrPrincipal.setAside[k32], 2 - release, 1e-9, 'r348 FY32 = cash + interest release')
+    expectClose(f.dsrPrincipal.setAside[k32], 4.154245, 1e-6, 'r348 FY32 value')
+    expectClose(f.dsrPrincipalShortfall[k32], (2 - release) + (codP + 2) - reqP[k32], 1e-9, 'r352 FY32')
+    expect(f.dsrPrincipalShortfall[k32]).toBeLessThan(0)
+  })
+
+  it('a rising interest need is topped up up to the cash available, the rest is a shortfall', () => {
+    // FY33 interest +10 → FY32 interest DSR need = ½ × FY33 interest rises by 5, above the 45.08 held.
+    const debt = { ...debt0, interest: debt0.interest.map((v, k) => (k === k33 ? v + 10 : v)) }
+    const need = (f: ReturnType<typeof run>) => f.dsrInterestRequired[k32] - codI
+    const capped = run(2, debt)
+    expect(need(capped)).toBeGreaterThan(2)
+    expectClose(capped.dsrInterest.setAside[k32], 2, 1e-9, 'r332 capped at the cash')
+    expectClose(capped.dsrInterest.closing[k32], codI + 2, 1e-9, 'r333')
+    expectClose(capped.dsrInterestShortfall[k32], 2 - need(capped), 1e-9, 'r336 shortfall')
+    expectClose(capped.dsrPrincipal.setAside[k32], 0, 0, 'nothing left for the principal DSR')
+    const full = run(100, debt)
+    expectClose(full.dsrInterest.setAside[k32], need(full), 1e-9, 'r332 full top-up')
+    expectClose(full.dsrInterest.closing[k32], full.dsrInterestRequired[k32], 1e-9, 'r333 = requirement')
+    expectClose(full.dsrInterestShortfall[k32], 0, 0, 'no shortfall')
+  })
+})
+
+describe('v16 funds: guards', () => {
+  const i = inputsFor('sample'), g = buildGrid(i), c = runConstruction(i, g, opsFor('sample'))
+  const rev = runRevenue(i, g, c), opex = runOpex(i, g, sum(grantSchedule(i, g).pim)), debt = runDebt(i, g, c)
+  const tax = neg(row('sample', 'Fin-IGAAP!35').values), cash = row('sample', 'Fin-IGAAP!136').values
+
+  it('a huge or infinite DSR principal instalment count returns at once (bounded by the schedule)', () => {
+    for (const n of [1e12, Infinity]) {
+      const t = performance.now()
+      const f = runFunds({ ...i, funds: { ...i.funds, dsrPrincipalInstalments: n } }, g, c, rev, opex, debt, tax, cash)
+      expect(performance.now() - t).toBeLessThan(200)
+      expect(f.dsrPrincipalRequired.every(Number.isFinite)).toBe(true)
+    }
+  })
+
+  it('FFE months come from the first-payment lag (DB!H72), not funds.ffeDays; no annuities → no subtraction', () => {
+    const f = runFunds({ ...i, funds: { ...i.funds, ffeDays: 30 } }, g, c, rev, opex, debt, tax, cash)
+    expectClose(f.ffeMonths, 5.384508219178082, 1e-12, 'ffeDays ignored')
+    const none = runFunds(i, g, c, { ...rev, dates: [] }, opex, debt, tax, cash)
+    expectClose(none.ffeMonths, i.income.firstPaymentLagDays / 365 * 12, 1e-12, 'no annuities')
   })
 })

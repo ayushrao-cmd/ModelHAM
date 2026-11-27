@@ -72,6 +72,9 @@ export function runFunds(i: Inputs, g: Grid, c: ConstructionResult, rev: Revenue
   // FYs in each of the `mmrYears` FYs ending with its 2nd FY (FY32–FY36 and FY38–FY42 at the sample, and FY33–FY37 /
   // FY39–FY43 at build1460, which is what V16's columns give there too since they count from FY(COD)).
   // ponytail: a 3rd consecutive MM FY is not reserved for; unreachable with one MM concession year per cycle.
+  // note: kept as V16 computes them, candidates for Health warnings (Task 17): a cycle in concession years 1–3 clips
+  // the window at FY(COD), so fewer than `mmrYears` set-asides; mmrShare × mmrYears ≠ 1 leaves a residual (or a
+  // negative balance) after the MM spend.
   const mm = opex.majorMaintenance, kCod = at.get(fyEnd(g.cod)) ?? n
   const mmrSet = perFy()
   for (let k = kCod; k < n; k++) {
@@ -86,12 +89,14 @@ export function runFunds(i: Inputs, g: Grid, c: ConstructionResult, rev: Revenue
 
   // ---- Funds for Expenses (r277–317) ----
   // H280 = DB!H72/365 × 12 − MIN(G279, G280); G27x = ROUND(YEARFRAC(annuity, its FY end) × 12, 4); G280 only when
-  // FY(K16) has 2 annuities (E277). DB!H72 = K13 + K14 in V16; the site's `funds.ffeDays` (180) stands in.
+  // FY(K16) has 2 annuities (E277). DB!H72 = K13 + K14 = the first-payment lag (as opex's COP O&M funding).
+  // `funds.ffeDays` is left unused (Task 17 hides it): V16 has no separate input. No annuity → nothing subtracted
+  // (H280's MIN = 0 branch).
   const dates = rev.dates
   const firstFy = dates.filter((d) => fyEnd(d) === k16).length
   const held = dates.slice(0, firstFy >= 2 ? 2 : 1)
     .map((d) => Math.round(yearFrac360(d, fyEnd(d)) * MONTHS * 10 ** DIGITS) / 10 ** DIGITS)
-  const ffeMonths = i.funds.ffeDays / YEAR * MONTHS - Math.min(...held)
+  const ffeMonths = i.income.firstPaymentLagDays / YEAR * MONTHS - (held.length ? Math.min(...held) : 0)
   // Closing r303/r310/r317 = the cost /12 × H280, 0 before FY(K16) and in the last FY.
   const hold = (k: number, cost: number) => (g.fys[k] < k16 || k === last ? 0 : cost / MONTHS * ffeMonths)
   const byPeriodFy = (pick: (k: number) => number) => {
@@ -131,7 +136,8 @@ export function runFunds(i: Inputs, g: Grid, c: ConstructionResult, rev: Revenue
     if (f < t14 || f > u14) return 0
     const m = dates.reduce((s, d, j) => s + (halfYearEnd(d) === f ? j + 1 : 0), 0)
     let s = 0
-    for (let j = m + 1; j <= m + i.funds.dsrPrincipalInstalments; j++) s += debt.principal[j - 1] ?? 0
+    // Bounded by the schedule: DB r67 is 0 past it.
+    for (let j = m + 1; j <= Math.min(m + i.funds.dsrPrincipalInstalments, debt.principal.length); j++) s += debt.principal[j - 1]
     return s
   })
   // r321 = next FY's P&L interest /12 × C56 months, for FY ≥ K16 and next FY ≤ U14.
