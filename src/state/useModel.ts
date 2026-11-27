@@ -3,10 +3,10 @@
 // months): its result
 // is null and its checks are the Required checks, or the blocking ones.
 import { useMemo } from 'react'
-import { blockingChecks, healthScore, modelRunCheck, runChecks, type Check } from '../engine/health'
+import { blockingChecks, healthScore, modelRunCheck, runChecks, validateInputs, type Check } from '../engine/health'
 import { runModel, type ModelResult } from '../engine/model'
 import type { Inputs } from '../engine/types'
-import { type Missing, missingOf, requiredChecks } from './projects'
+import { type Missing, missingOf, requiredChecks, requiredEmpty } from './projects'
 import { type Scenario, useStore } from './store'
 
 interface Run { result: ModelResult | null; blocked: Check[] }
@@ -26,13 +26,17 @@ function runOf(i: Inputs): Run {
     const blocked = blocking(i)
     // The engine throws on dates it cannot place; that must never reach React (it would show the Recover screen).
     if (blocked.length) r = { result: null, blocked }
-    else try { r = { result: runModel(i), blocked: [] } } catch (e) { r = { result: null, blocked: [modelRunCheck(e)] } }
+    else try { r = { result: runModel(i), blocked: [] } } catch (e) {
+      // The failing input checks are the likely cause: the run check points at the first, and they are listed too.
+      const bad = validateInputs(i).filter(c => !c.pass && c.severity === 'error')
+      r = { result: null, blocked: [modelRunCheck(e, bad), ...bad] }
+    }
     runs.set(i, r)
   }
   return r
 }
 /** The engine result for a scenario, or null while it has empty fields or a blocking error. */
-export const resultFor = (s: Pick<Scenario, 'inputs' | 'empty'>) => (s.empty.length ? null : runOf(s.inputs).result)
+export const resultFor = (s: Pick<Scenario, 'inputs' | 'empty'>) => (requiredEmpty(s.inputs, s.empty).length ? null : runOf(s.inputs).result)
 const checks = new WeakMap<ModelResult, Check[]>()
 const checksFor = (r: ModelResult) => {
   let c = checks.get(r)
@@ -55,9 +59,9 @@ export function useModel(): Model {
   const baseInputs = useStore(s => scenarioOf(s, s.baseId).inputs)
   const baseEmpty = useStore(s => scenarioOf(s, s.baseId).empty)
   return useMemo(() => {
-    const missing = missingOf(activeEmpty)
+    const missing = missingOf(activeInputs, activeEmpty)
     const active = resultFor({ inputs: activeInputs, empty: activeEmpty })
-    const blocked = activeEmpty.length ? [] : runOf(activeInputs).blocked
+    const blocked = missing.paths.length ? [] : runOf(activeInputs).blocked
     const c = active ? checksFor(active) : [...requiredChecks(missing), ...blocked]
     return { active, base: resultFor({ inputs: baseInputs, empty: baseEmpty }), checks: c, score: healthScore(c), missing, blocked }
   }, [activeInputs, activeEmpty, baseInputs, baseEmpty])

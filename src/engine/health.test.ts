@@ -150,6 +150,25 @@ describe('input checks', () => {
     expect(blockingChecks(bad).map(c => c.id)).toEqual(['field:deal.bidDate'])
     expect(modelRunCheck(new Error('boom'))).toMatchObject({ id: 'model-run', severity: 'error', pass: false })
   })
+  it('milestones past the build (or Schedule G with none) block the engine, naming the milestone', () => {
+    const short = setAt(D, 'deal.buildDays', 700)
+    const b = blockingChecks(short)
+    expect(b.map(c => c.id)).toEqual(['field:milestones'])
+    expect(b[0]).toMatchObject({ fieldId: 'milestones', section: 'phasing' })
+    expect(b[0].message).toMatch(/Milestone 3: day 821 must be a whole day within the 700 build days/)
+    const none = setAt(setAt(D, 'milestones', []), 'build.phasing', 'scheduleG')
+    expect(blockingChecks(none)).toEqual([expect.objectContaining({ id: 'schedule-g-milestones', fieldId: 'milestones', pass: false })])
+    expect(blockingChecks(setAt(D, 'milestones', []))).toEqual([]) // no milestones is fine for Manual phasing
+    expect(find(validateInputs(D), 'schedule-g-milestones').pass).toBe(true)
+  })
+  it('a model that still fails to run points at the first failing input, else the deal section', () => {
+    const bad = validateInputs(setAt(D, 'deal.daysToAward', -1e6)).filter(c => !c.pass)
+    expect(modelRunCheck(new Error('boom'), bad)).toMatchObject({ section: 'deal', fieldId: 'deal.daysToAward' })
+    expect(modelRunCheck(new Error('boom'), bad).message).toMatch(/boom.*Days to Award/)
+    const none = modelRunCheck(new Error('boom'))
+    expect(none.section).toBe('deal')
+    expect(none.fieldId).toBeUndefined()
+  })
 })
 
 describe('model checks that can fail', () => {

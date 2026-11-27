@@ -185,6 +185,54 @@ describe('projects', () => {
     expect(act(m).empty).toContain('build.manualPhasing.0')
   })
 
+  it('a new blank project starts Equated: manual EPC phasing is not required until Manual is chosen', async () => {
+    const m = await fresh()
+    const st = m.useStore.getState
+    st().createProject('blank')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    const { BLANK_FIELD_OF, missingOf } = await import('./projects')
+    const { resultFor } = await import('./useModel')
+    for (const f of new Set(BLANK_FIELD_OF.values())) if (f !== 'build.manualPhasing') st().setInput(f, structuredClone(getAt(DEFAULT_INPUTS, f)))
+    expect(act(m).empty.every(p => p.startsWith('build.manualPhasing.'))).toBe(true)
+    expect(act(m).empty).toHaveLength(36)
+    const eq = missingOf(act(m).inputs, act(m).empty)
+    expect(eq.paths).toEqual([])
+    expect(eq.filled).toBe(eq.total)
+    expect(resultFor(act(m))).not.toBeNull()
+    st().setInput('build.phasing', 'manual') // now the 36 monthly shares are required
+    const man = missingOf(act(m).inputs, act(m).empty)
+    expect(man.byField).toEqual([expect.objectContaining({ fieldId: 'build.manualPhasing', count: 36, total: 36 })])
+    expect(man.total - man.filled).toBe(36)
+    expect(resultFor(act(m))).toBeNull()
+    st().setInput('build.manualPhasing', [...DEFAULT_INPUTS.build.manualPhasing])
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
+  // A v2/v3 blank save never saved `phasing` while it equalled the then template's 'equated'.
+  const { phasing: _p, manualPhasing: _mp, spvManpower: _spv, ...v2Build } = DEFAULT_INPUTS.build
+  const blankSave = (version: number, build: object) => JSON.stringify({ state: { projectId: 'b', projects: [{ id: 'b', template: 'blank',
+    activeId: 's', baseId: 's', compareId: null, createdAt: 1,
+    scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs: { ...DEFAULT_INPUTS, build }, empty: '' }] }] }, version })
+
+  it('a complete v2 blank save keeps Equated phasing: only SPV Manpower (new in v3) is left, then results are live', async () => {
+    cookies.set(KEY, blankSave(2, v2Build))
+    const m = await fresh()
+    const { missingOf } = await import('./projects')
+    const { resultFor } = await import('./useModel')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    expect(missingOf(act(m).inputs, act(m).empty).byField.map(f => f.fieldId)).toEqual(['build.spvManpower'])
+    m.useStore.getState().setInput('build.spvManpower', 1.5)
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
+  it('a complete v3 blank save keeps Equated phasing and its results', async () => {
+    cookies.set(KEY, blankSave(3, { ...v2Build, spvManpower: 1.5 }))
+    const m = await fresh()
+    const { resultFor } = await import('./useModel')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
   it('on rehydrate drops unknown empty paths, and a blank leaf that is missing or wrong-typed becomes empty', async () => {
     const inputs = structuredClone(DEFAULT_INPUTS) as unknown as { deal: Record<string, unknown> }
     delete inputs.deal.authorityEstimate // missing

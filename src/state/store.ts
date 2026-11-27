@@ -305,7 +305,8 @@ export const useStore = create<Store>()(persist((set, get) => {
   }),
   // v1 saved one list of scenarios: it becomes the one sample project. v2 blank projects get the v3 blank fields empty.
   // v4: blank saves' empty ranges were indexed by the v3 list (v2's is its prefix), so they are decoded with it into
-  // paths (the hidden fields drop out in sanitize); the 'sCurve' phasing option is now 'scheduleG'.
+  // paths (the hidden fields drop out in sanitize); the 'sCurve' phasing option is now 'scheduleG'; a blank save with no
+  // phasing keeps the then template's 'equated'.
   migrate: (raw0, version) => {
     let raw = raw0
     if (version < 2 && isObj(raw)) raw = { projectId: 'p1', projects: [{ ...raw, id: 'p1', template: 'sample' }] }
@@ -313,8 +314,11 @@ export const useStore = create<Store>()(persist((set, get) => {
       if (!isObj(p) || !Array.isArray(p.scenarios)) return p
       return { ...p, scenarios: p.scenarios.map(x => {
         if (!isObj(x)) return x
-        const inputs = upgradeInputs(x.inputs)
+        let inputs = upgradeInputs(x.inputs)
         if (p.template !== 'blank') return { ...x, inputs }
+        // Before v4 the template phasing was Equated, so a blank save without one is Equated (not today's sample Manual).
+        if (isObj(inputs) && !(isObj(inputs.build) && 'phasing' in inputs.build))
+          inputs = { ...inputs, build: { ...(isObj(inputs.build) ? inputs.build : {}), phasing: 'equated' } }
         const was = typeof x.empty === 'string' ? decodeEmpty(x.empty, BLANK_EMPTY_V3) : Array.isArray(x.empty) ? x.empty : []
         return { ...x, inputs, empty: version < 3 ? [...was, ...V3_BLANK_PATHS] : was }
       }) }

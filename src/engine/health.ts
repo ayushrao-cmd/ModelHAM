@@ -137,6 +137,11 @@ export function validateInputs(i: Inputs): Check[] {
       i.income.installments.length === periods, `it needs exactly ${periods} (${PERIODS_PER_YEAR} × ${Y} operate years)`),
     check('tranche-sum', 'Support tranches valid', 'capital', 'error', tranchesOk, trancheMsg, 'support.tranches'),
     check('manual-phasing-sum', 'Manual EPC phasing total', 'phasing', 'error', mpOk, mpMsg, 'build.manualPhasing'),
+    check('schedule-g-milestones', 'Schedule G has milestones', 'phasing', 'error', i.build.phasing !== 'scheduleG' || i.milestones.length > 0,
+      i.build.phasing !== 'scheduleG' ? 'Schedule G phasing is not in use.'
+        : i.milestones.length ? `Schedule G phases EPC over ${i.milestones.length} build milestones.`
+        : 'Schedule G phasing spreads EPC between the build milestones, and there are none: add milestones or pick another phasing.',
+      'milestones'),
     check('resurfacing-order', 'Resurfacing years in order', 'operations', 'error', resurfacingOk, resurfacingMsg, 'operations.resurfacingYears'),
     check('mmr-cover', 'Maintenance reserve covers each resurfacing', 'operations', 'warning', coverOk, coverMsg, 'funds.mmrShare'),
     check('dates-order', 'Rate quote on or before bid date', 'income', 'error', datesValid && quote <= bid,
@@ -151,14 +156,21 @@ export function validateInputs(i: Inputs): Check[] {
   ]
 }
 
-/** Checks that stop the engine from running at all (it throws on a date it cannot place): shown instead of results. */
+/** Checks that stop the engine from running at all, shown instead of results: an invalid bid date (the engine throws),
+ *  milestones that don't fit the build, and Schedule G with no milestones (no progress, so no Construction Support). */
+const BLOCKING = new Set(['field:deal.bidDate', 'field:milestones', 'schedule-g-milestones'])
 export function blockingChecks(i: Inputs): Check[] {
-  return validateInputs(i).filter(c => c.id === 'field:deal.bidDate' && !c.pass)
+  return validateInputs(i).filter(c => BLOCKING.has(c.id) && !c.pass)
 }
 
-/** The engine threw on inputs that passed `blockingChecks`: an error check instead of a crash. */
-export const modelRunCheck = (e: unknown): Check => check('model-run', 'Model can run', 'deal', 'error', false,
-  `The model can't run on these inputs: ${e instanceof Error ? e.message : String(e)}. Check the dates and day counts.`, 'deal.daysToStart')
+/** The engine threw on inputs that passed `blockingChecks`: an error check instead of a crash, pointing at the first
+ *  failing input check (`failing`) as the likely cause, else at the deal section. */
+export function modelRunCheck(e: unknown, failing: Check[] = []): Check {
+  const cause = failing.find(c => !c.pass && c.fieldId)
+  return check('model-run', 'Model can run', cause?.section ?? 'deal', 'error', false,
+    `The model can't run on these inputs: ${e instanceof Error ? e.message : String(e)}. `
+      + (cause ? `Start with ${cause.title}: ${cause.message}` : 'Check the dates and day counts.'), cause?.fieldId)
+}
 
 const LOOPS: Record<keyof ModelResult['loops'], { title: string; what: string }> = {
   construction: { title: 'Construction funding converged', what: 'Construction funding (debt, equity, interest during build and the interest DSR)' },

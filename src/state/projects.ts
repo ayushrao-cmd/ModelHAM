@@ -31,8 +31,9 @@ export const BLANK_EMPTY_V3: string[] = leaves(FIELDS.filter(startsEmptyV3))
 export const BLANK_FIELD_OF = new Map(BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).map(p => [p, f.id])))
 /** Blank-class fields added in persist v3: a v2 blank save has no value for them. */
 export const V3_BLANK_PATHS = BLANK_EMPTY.filter(p => under('build.manualPhasing')(p) || under('build.spvManpower')(p))
+// A blank project starts Equated (the sample keeps V16's Manual), so it needs no 36 monthly shares unless Manual is chosen.
 export const BLANK_INPUTS: Inputs = BLANK_EMPTY.reduce(
-  (i, p) => setAt(i, p, typeof getAt(i, p) === 'string' ? '' : 0), DEFAULT_INPUTS)
+  (i, p) => setAt(i, p, typeof getAt(i, p) === 'string' ? '' : 0), setAt(DEFAULT_INPUTS, 'build.phasing', 'equated'))
 const EMPTIABLE = new Set(BLANK_EMPTY)
 
 export const TEMPLATES: Record<Template, { inputs: Inputs; empty: string[] }> = {
@@ -46,8 +47,8 @@ export const TEMPLATES: Record<Template, { inputs: Inputs; empty: string[] }> = 
  * v3 appended build.manualPhasing + build.spvManpower at the end of BLANK_EMPTY (store.ts `migrate` marks them empty for v2 blank saves).
  * v4 removed the hidden fields (patrol rental, build finance & legal, WPI, CPI): `migrate` decodes older saves with BLANK_EMPTY_V3.
  */
-export function encodeEmpty(empty: string[]): string {
-  const has = new Set(empty), idx = BLANK_EMPTY.flatMap((p, i) => (has.has(p) ? [i] : []))
+export function encodeEmpty(empty: string[], list = BLANK_EMPTY): string {
+  const has = new Set(empty), idx = list.flatMap((p, i) => (has.has(p) ? [i] : []))
   const out: string[] = []
   for (let k = 0; k < idx.length; k++) {
     let j = k
@@ -77,14 +78,20 @@ export const neutralise = (inputs: Inputs, empty: string[]) => empty.reduce((i, 
 export interface MissingField { fieldId: string; label: string; section: SectionId; count: number; total: number }
 export interface Missing { paths: string[]; byField: MissingField[]; filled: number; total: number }
 
+/** Empty leaves the inputs don't use: manual EPC phasing unless EPC Phasing is Manual. They are never required. */
+const unused = (i: Inputs) => (i.build.phasing === 'manual' ? () => false : under('build.manualPhasing'))
+/** The empty leaves that must be filled before the engine runs. */
+export const requiredEmpty = (i: Inputs, empty: string[]) => { const skip = unused(i); return empty.filter(p => !skip(p)) }
+
 const TOTAL = new Map(FIELDS.map(f => [f.id, leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).length]))
-/** Progress counts values (list cells count one each) out of everything a blank project starts without. */
-export function missingOf(empty: string[]): Missing {
+/** Progress counts values (list cells count one each) out of everything a blank project starts without and needs. */
+export function missingOf(inputs: Inputs, empty: string[]): Missing {
+  const paths = requiredEmpty(inputs, empty), total = requiredEmpty(inputs, BLANK_EMPTY).length
   const byField = FIELDS.flatMap(f => {
-    const count = empty.filter(under(f.id)).length
+    const count = paths.filter(under(f.id)).length
     return count ? [{ fieldId: f.id, label: f.label, section: f.section, count, total: TOTAL.get(f.id)! }] : []
   })
-  return { paths: empty, byField, filled: BLANK_EMPTY.length - empty.length, total: BLANK_EMPTY.length }
+  return { paths, byField, filled: total - paths.length, total }
 }
 
 /** While a scenario is incomplete these are its only checks: one error per field with an empty value. */
