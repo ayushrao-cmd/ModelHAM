@@ -1,0 +1,42 @@
+import { useEffect, useState } from 'react'
+import { Info, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cookies } from '../lib/cookies'
+
+export const NOTICE_KEY = 'milestone.notice.method'
+
+const PROBE = 'milestone.cookie.probe'
+/** Already seen, or cookies blocked (a write that does not read back): either way, never nag. Probes with its own key,
+ *  so a second call (StrictMode) still answers the same. */
+function seen(): boolean {
+  try {
+    if (cookies.get(NOTICE_KEY) !== null) return true
+    cookies.set(PROBE, '1')
+    const kept = cookies.get(PROBE) === '1'
+    cookies.remove(PROBE)
+    return !kept
+  } catch { return true }
+}
+
+/** One-time notice (per browser) that the numbers now follow the original workbook's method, linking to the
+ *  method notes. The flag is set as soon as it shows, so a reload does not show it again. */
+export function MethodNotice() {
+  const [open, setOpen] = useState(() => !seen())
+  useEffect(() => { if (open) try { cookies.set(NOTICE_KEY, '1') } catch { /* memory only */ } }, [open])
+  if (!open) return null
+  return (
+    <div role="status" className="mb-6 flex items-start gap-3 rounded-lg border border-primary/25 bg-primary/[0.05] px-4 py-3 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+      <p className="min-w-0 flex-1 leading-5">
+        Numbers now follow the original workbook's method, its quirks included.{' '}
+        <a href="#/health?section=notes" onClick={() => setOpen(false)}
+          className="rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1">
+          See the method notes
+        </a>
+      </p>
+      <Button variant="ghost" size="icon" className="-my-1 -mr-2 size-7 shrink-0" aria-label="Dismiss" onClick={() => setOpen(false)}>
+        <X aria-hidden="true" />
+      </Button>
+    </div>
+  )
+}

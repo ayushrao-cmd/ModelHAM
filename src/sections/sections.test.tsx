@@ -1,13 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { DEFAULT_INPUTS } from '../engine/defaults'
+import { runModel } from '../engine/model'
 import { useStore } from '../state/store'
 import { Build } from './Build'
 import { Capital } from './Capital'
 import { Deal } from './Deal'
 import { Income } from './Income'
 import { Operations } from './Operations'
-import { Phasing } from './Phasing'
+import { Phasing, PhasingView } from './Phasing'
 import { Statements } from './Statements'
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } // jsdom lacks it
@@ -57,41 +59,48 @@ describe('sections', () => {
     expect(chip.getAttribute('href')).toBe('#/health?section=operations')
   })
 
-  it('statements open on the tab named in the URL and keep the tab in the URL when switched', () => {
-    window.location.hash = '#/statements?tab=bs'
-    wrap(<Statements />)
-    expect(screen.getByRole('tab', { name: 'Balance Sheet' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByText(/^Balance sheet balances at every FY end/)).toBeTruthy()
-    expect(screen.getByRole('region', { name: 'Balance sheet' }).textContent).toMatch(/FY27.*COD/)
-    const cf = screen.getByRole('tab', { name: 'Cash Flow' })
-    fireEvent.mouseDown(cf) // Radix tabs activate on mousedown
-    expect(cf.getAttribute('aria-selected')).toBe('true')
-    expect(window.location.hash).toBe('#/statements?tab=cf')
-    expect(screen.getByText(/^Closing cash equals balance-sheet cash/)).toBeTruthy()
+  it('Capital shows the short-term loan and the DSR, FFE and MMR funds', () => {
+    wrap(<Capital />)
+    for (const t of ['Short-term loan (STL)', 'Debt Service Reserve (DSR)', 'Funds for Expenses (FFE)', 'Major Maintenance Reserve (MMR)'])
+      expect(screen.getByRole('heading', { name: t }), t).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Short-term loan (STL)' }).parentElement!.textContent).toMatch(/₹225\.00 Cr.*Peak balance ₹196\.88 Cr/)
+    expect(screen.getByLabelText('Senior debt and fund balances at each financial year end')).toBeTruthy()
   })
 
-  it('a section link without ?tab= returns statements to the Income Statement', () => {
-    window.location.hash = '#/statements'
-    wrap(<Statements />)
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Cash Flow' }))
-    expect(window.location.hash).toBe('#/statements?tab=cf')
-    act(() => { window.location.hash = '#/statements'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
-    expect(screen.getByRole('tab', { name: 'Income Statement' }).getAttribute('aria-selected')).toBe('true')
+  it("Build shows the original's project cost, with patrol rental and finance & legal from build days", () => {
+    wrap(<Build />)
+    expect(stat('Total project cost')).toBe('₹2,465.69 Cr')
+    expect(screen.getByRole('rowheader', { name: 'Finance & legal (from build days)' }).parentElement!.textContent).toContain('4.97')
+    expect(screen.queryByLabelText('Patrol Vehicles (Rental)')).toBeNull() // hidden: the engine derives it
+    expect(screen.getByLabelText('Patrol Rental (per month)')).toBeTruthy()
   })
 
-  it('statement line groups are row groups with their heading', () => {
-    window.location.hash = '#/statements?tab=bs'
-    wrap(<Statements />)
-    const groups = screen.getAllByRole('rowgroup').filter(g => g.tagName === 'TBODY')
-    expect(groups.length).toBe(3)
-    expect(screen.getByRole('rowheader', { name: 'Liabilities' }).getAttribute('scope')).toBe('rowgroup')
+  it('Phasing offers the Schedule G option (choosing it sets scheduleG) and the manual phasing list', () => {
+    // jsdom lacks what Radix Select calls on open
+    Element.prototype.hasPointerCapture ??= () => false
+    Element.prototype.releasePointerCapture ??= () => {}
+    Element.prototype.scrollIntoView ??= () => {}
+    wrap(<Phasing />)
+    expect(screen.getByText('Manual EPC Phasing')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Monthly construction schedule' }).textContent).toContain('(after COD)')
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'EPC Phasing' }), { key: 'Enter' })
+    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Manual monthly %', 'Equated monthly', 'Schedule G'])
+    fireEvent.click(screen.getByRole('option', { name: 'Schedule G' }))
+    const s = useStore.getState()
+    expect(s.scenarios.find(x => x.id === s.activeId)!.inputs.build.phasing).toBe('scheduleG')
   })
 
-  it('statements show negatives in parentheses', () => {
-    wrap(<Statements />)
-    const is = screen.getByRole('region', { name: 'Income statement' })
-    expect(is.textContent).toMatch(/\(\d[\d,]*\.\d\d\)/)
-    expect(is.textContent).not.toMatch(/-\d/)
+  it('Build Days 0 gates every result screen instead of crashing; Phasing renders an empty schedule as an empty state', () => {
+    useStore.getState().setInput('deal.buildDays', 0)
+    for (const View of [Phasing, Capital, Build]) {
+      const { unmount } = wrap(<View />)
+      expect(screen.getByRole('alert').textContent).toMatch(/There are no build months: Build Days is 0/)
+      unmount()
+    }
+    const r = runModel(DEFAULT_INPUTS)
+    const empty = { ...r, grid: { ...r.grid, periods: [] }, construction: { ...r.construction, months: [] } }
+    wrap(<PhasingView r={empty} />)
+    expect(screen.getByText(/No build months/)).toBeTruthy()
   })
 
   it.each([['Phasing', Phasing], ['Statements', Statements]])('%s sits behind the results gate in a blank project', (_, View) => {

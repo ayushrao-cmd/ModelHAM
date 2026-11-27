@@ -1,0 +1,84 @@
+{
+  "_doc": [
+    "Site Inputs path -> V16 cell. 'write' cells are V16 typed inputs the harness sets; 'derived' cells are V16 formulas",
+    "the harness never writes, only reads back after the calc (meta.inputs records a derived path when its value differs",
+    "from the sample, so the engine run for that set can be given the same value). 'values' maps a site enum to V16's text.",
+    "Found from docs/recon/dump/*.txt, recon A/B/C and the workbook formulas."
+  ],
+  "paths": {
+    "deal.bidPrice": {
+      "write": "'1. IO '!B6",
+      "note": "BPC. DB!C9 = '1. IO '!B6; drives grant, completion cost, PSBG, IE fee, O&M % and every %-of-BPC line."
+    },
+    "build.epcFixed": {
+      "write": "'1. IO '!C11",
+      "note": "EPC cost fixed, net of GST. DB!C30 = '1. IO '!C11; GST DB!C31, gross DB!C32; admin cost 2.5% of DB!E30 follows."
+    },
+    "deal.buildDays": {
+      "write": "'1. IO '!F8",
+      "note": "Construction days. 'CA Set'!N8 = '1. IO '!F8 (the brief's cell is a link, so the harness writes the source). N8 drives DB!H13/I13 (construction end, COD, annuity dates), DB!J3, EPC Phasing r38/r82/r86, LIE/trustee fees ('Fin Set'!D20, J20), IMV rental ('1. IO '!J11). Sch-G milestone days 'CA Set'!C50:E50 (274/548/821) are separate typed inputs: they feed only the Sch-G phasing option and the compliance check, not the selected Manual phasing, so they stay as V16 has them; the completion milestone 'CA Set'!F50 = N8 follows."
+    },
+    "capital.equityPct": {
+      "write": "'1. IO '!C16",
+      "note": "Equity share of means of finance; debt '1. IO '!B16 = 1 - C16."
+    },
+    "capital.buildRate": {
+      "write": "'1. IO '!G16",
+      "note": "RTL rate in construction (DB!C52). Also the STL and MA interest rate (COP-MOF H161, H173 use DB!C52)."
+    },
+    "capital.operateRate": {
+      "derived": "'1. IO '!H16",
+      "note": "RTL rate in operation (DB!D52). V16 formula =G16-0.25%, so it moves with capital.buildRate."
+    },
+    "build.phasing": {
+      "write": "'Fin Set'!B30",
+      "values": {
+        "scheduleG": "Schedule - G Phasing %",
+        "equated": "Equated Phasing %",
+        "manual": "Manual Phasing %"
+      },
+      "note": "EPC phasing selector (list 'Fin Set'!B55:D55). V16 has no S-curve option; its options are Schedule-G (linear within Sch-G segments), Equated (days/build days) and Manual (by month index, the sample). The sample is 'manual', which the site type ('equated'|'sCurve') does not have yet."
+    },
+    "build.patrolRental": {
+      "derived": "'1. IO '!J11",
+      "note": "IMV vehicle rental = (0.01+0.0075+0.006) x 12 x buildDays/365; moves with deal.buildDays."
+    },
+    "build.financeLegal": {
+      "derived": "'1. IO '!L11",
+      "note": "Finance and legal in construction = SUM('Fin Set'!B26:L26); LIE reports, trustee fee and the annual fees x count of 31-Mar month ends move with deal.buildDays."
+    },
+    "milestones.3.day": {
+      "derived": "'CA Set'!F50",
+      "note": "Sch-G completion day = 'CA Set'!N8 (build days)."
+    }
+  },
+  "sets": {
+    "bid2400": { "deal.bidPrice": 2400 },
+    "epc105": { "build.epcFixed": 1837.5 },
+    "build1460": { "deal.buildDays": 1460 },
+    "equity30": { "capital.equityPct": 0.3 },
+    "rates50bp": { "capital.buildRate": 0.1025 },
+    "equated": { "build.phasing": "equated" }
+  },
+  "_sets_doc": "epc105 = 1750 x 1.05. rates50bp: build rate +0.50% and the operate rate follows by V16's own formula (recorded as derived). equated replaces the design's 'scurve' set: V16 has no S-curve phasing (see build.phasing).",
+  "_patches_doc": "Design §9: hard-codes a set makes wrong, patched in the temp copy only (never the sample). 'fillFrom' copies the source column's R1C1 formulas right across 'cell'.",
+  "patches": {
+    "build1460": [
+      {
+        "cell": "'Fin-INDAS'!CS191:CV191",
+        "fillFrom": "'Fin-INDAS'!CR191",
+        "why": "IndAS half-yearly equity XIRR date row stops at CR (92 periods) while its MATCH(\"\",...:$CV) and the IGAAP twin (Fin-IGAAP r175) run to CV. At 1460 build days the schedule needs 93 periods: the concession-end date drops off and MATCH finds no blank, so D209/D210 (and DB!D142) are #N/A. Extended to CV like IGAAP."
+      },
+      {
+        "cell": "'Fin-INDAS'!CS193:CV210",
+        "fillFrom": "'Fin-INDAS'!CR193:CR210",
+        "why": "Cash-flow, FY-mapping, flag and XIRR rows of the same IndAS block (r193-r210) extended to CV with the date row above (IGAAP r177-r208 already reach CV)."
+      },
+      {
+        "cell": "'Fin-IGAAP'!I366:AH366",
+        "fillFrom": "'Fin-IGAAP'!H366",
+        "why": "GST on CP period expenses (SUMIF of COP-MOF r277 by FY) is filled only for E:H (FY27-FY30) while every other GST ledger row runs to AH. At 1460 build days construction ends in FY31, so FY31's CP input GST (0.4395) is dropped from the credit ledger and CF r84. Extended to AH like the rest of the ledger."
+      }
+    ]
+  }
+}

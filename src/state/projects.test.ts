@@ -31,12 +31,14 @@ describe('projects', () => {
     const sc = act(m)
     expect(sc.empty).toEqual(BLANK_EMPTY)
     for (const p of ['deal.bidPrice', 'deal.projectName', 'deal.bidDate', 'capital.repayment.3', 'milestones.0.day',
-      'operations.resurfacingYears.1', 'income.bankRates.4', 'indexation.wpi', 'build.epcFixed']) expect(sc.empty).toContain(p)
+      'operations.resurfacingYears.1', 'income.bankRates.4', 'build.manualPhasing.0', 'build.epcFixed']) expect(sc.empty).toContain(p)
     for (const p of sc.empty) {
       const v = getAt(sc.inputs, p)
       expect(v === 0 || v === '', p).toBe(true)
     }
-    for (const p of ['income.spread', 'income.installments.0', 'support.tranches.0.progress', 'tax.baseRate', 'deal.pavement', 'deal.operateYears'])
+    // hidden inputs the engine no longer reads are never required
+    for (const p of ['income.spread', 'income.installments.0', 'support.tranches.0.progress', 'tax.baseRate', 'deal.pavement', 'deal.operateYears',
+      'indexation.wpi', 'indexation.cpi', 'build.patrolRental', 'build.financeLegal'])
       expect(sc.empty).not.toContain(p)
     expect(sc.inputs.income.installments).toEqual(DEFAULT_INPUTS.income.installments)
     expect(sc.inputs.build.gstWorks).toBe(0.18)
@@ -148,6 +150,89 @@ describe('projects', () => {
     expect(s.scenarios[0].empty).toEqual([])
   })
 
+  it('migrates v3 saves: blank empty ranges decode with the v3 index, hidden fields drop out, S-curve becomes Schedule G', async () => {
+    const { BLANK_EMPTY, BLANK_EMPTY_V3 } = await import('./projects')
+    const was = ['deal.bidPrice', 'build.patrolRental', 'build.contingency', 'indexation.wpi', 'operations.routine', 'build.spvManpower']
+    const v3 = was.map(p => BLANK_EMPTY_V3.indexOf(p))
+    expect(v3.every(n => n >= 0)).toBe(true)
+    expect(BLANK_EMPTY_V3.length - BLANK_EMPTY.length).toBe(4) // patrol rental, build finance & legal, WPI, CPI
+    const inputs = { ...DEFAULT_INPUTS, build: { ...DEFAULT_INPUTS.build, phasing: 'sCurve' } }
+    cookies.set(KEY, JSON.stringify({ state: { projectId: 'b', projects: [
+      { id: 'b', template: 'blank', activeId: 's', baseId: 's', compareId: null, createdAt: 1,
+        scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: v3.join(',') }] },
+      { id: 'p', template: 'sample', activeId: 't', baseId: 't', compareId: null, createdAt: 1,
+        scenarios: [{ id: 't', name: 'Base case', updatedAt: 1, inputs: { build: { phasing: 'sCurve' } }, empty: '' }] },
+    ] }, version: 3 }))
+    const m = await fresh()
+    expect(act(m).empty).toEqual(['deal.bidPrice', 'build.contingency', 'operations.routine', 'build.spvManpower'])
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+    m.useStore.getState().setProject('p')
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+    expect(act(m).inputs.build.manualPhasing).toEqual(DEFAULT_INPUTS.build.manualPhasing)
+    // and an exported scenario from before the rename imports as Schedule G
+    expect(m.useStore.getState().importScenario(JSON.stringify({ name: 'Old', inputs }))).toEqual({ ok: true })
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+  })
+
+  it('a fresh blank project does not run the engine and has the new policy fields pre-filled', async () => {
+    const m = await fresh()
+    m.useStore.getState().createProject('blank')
+    const { resultFor } = await import('./useModel')
+    expect(resultFor(act(m))).toBeNull()
+    const i = act(m).inputs
+    expect([i.stl.pctOfBid, i.funds.fdRate, i.funds.mmrShare, i.funds.mmrYears, i.csr.on, i.tax.depLifeYears, i.indexation.pim])
+      .toEqual([0.1, 0.055, 0.2, 5, true, 15, 0.04])
+    expect(act(m).empty).toContain('build.manualPhasing.0')
+  })
+
+  it('a new blank project starts Equated: manual EPC phasing is not required until Manual is chosen', async () => {
+    const m = await fresh()
+    const st = m.useStore.getState
+    st().createProject('blank')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    const { BLANK_FIELD_OF, missingOf } = await import('./projects')
+    const { resultFor } = await import('./useModel')
+    for (const f of new Set(BLANK_FIELD_OF.values())) if (f !== 'build.manualPhasing') st().setInput(f, structuredClone(getAt(DEFAULT_INPUTS, f)))
+    expect(act(m).empty.every(p => p.startsWith('build.manualPhasing.'))).toBe(true)
+    expect(act(m).empty).toHaveLength(36)
+    const eq = missingOf(act(m).inputs, act(m).empty)
+    expect(eq.paths).toEqual([])
+    expect(eq.filled).toBe(eq.total)
+    expect(resultFor(act(m))).not.toBeNull()
+    st().setInput('build.phasing', 'manual') // now the 36 monthly shares are required
+    const man = missingOf(act(m).inputs, act(m).empty)
+    expect(man.byField).toEqual([expect.objectContaining({ fieldId: 'build.manualPhasing', count: 36, total: 36 })])
+    expect(man.total - man.filled).toBe(36)
+    expect(resultFor(act(m))).toBeNull()
+    st().setInput('build.manualPhasing', [...DEFAULT_INPUTS.build.manualPhasing])
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
+  // A v2/v3 blank save never saved `phasing` while it equalled the then template's 'equated'.
+  const { phasing: _p, manualPhasing: _mp, spvManpower: _spv, ...v2Build } = DEFAULT_INPUTS.build
+  const blankSave = (version: number, build: object) => JSON.stringify({ state: { projectId: 'b', projects: [{ id: 'b', template: 'blank',
+    activeId: 's', baseId: 's', compareId: null, createdAt: 1,
+    scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs: { ...DEFAULT_INPUTS, build }, empty: '' }] }] }, version })
+
+  it('a complete v2 blank save keeps Equated phasing: only SPV Manpower (new in v3) is left, then results are live', async () => {
+    cookies.set(KEY, blankSave(2, v2Build))
+    const m = await fresh()
+    const { missingOf } = await import('./projects')
+    const { resultFor } = await import('./useModel')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    expect(missingOf(act(m).inputs, act(m).empty).byField.map(f => f.fieldId)).toEqual(['build.spvManpower'])
+    m.useStore.getState().setInput('build.spvManpower', 1.5)
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
+  it('a complete v3 blank save keeps Equated phasing and its results', async () => {
+    cookies.set(KEY, blankSave(3, { ...v2Build, spvManpower: 1.5 }))
+    const m = await fresh()
+    const { resultFor } = await import('./useModel')
+    expect(act(m).inputs.build.phasing).toBe('equated')
+    expect(resultFor(act(m))).not.toBeNull()
+  })
+
   it('on rehydrate drops unknown empty paths, and a blank leaf that is missing or wrong-typed becomes empty', async () => {
     const inputs = structuredClone(DEFAULT_INPUTS) as unknown as { deal: Record<string, unknown> }
     delete inputs.deal.authorityEstimate // missing
@@ -157,8 +242,10 @@ describe('projects', () => {
         scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: ['deal.bidPrice', 'nope', 'income.spread', 7] }] }] },
       version: 2,
     }))
+    const { V3_BLANK_PATHS } = await import('./projects')
     const m = await fresh()
-    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm'])
+    // v2 save: the v3 blank fields (manual phasing, SPV manpower) are empty too
+    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm', ...V3_BLANK_PATHS])
     expect(act(m).inputs.deal.bidPrice).toBe(0)
     expect(act(m).inputs.deal.lengthKm).toBe(0)
     expect(act(m).inputs.deal.buildDays).toBe(DEFAULT_INPUTS.deal.buildDays)
@@ -176,12 +263,12 @@ describe('projects', () => {
     const m = await fresh()
     for (let k = 0; k < 10; k++) m.useStore.getState().createProject('blank')
     const saved = cookies.get(KEY)!
-    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-80')
+    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-113')
     const { encodeCookie } = await import('../lib/cookies')
     expect(encodeCookie(saved).length).toBeLessThan(4096)
     const b = await fresh()
     expect(b.useStore.getState().projects).toHaveLength(11)
-    expect(act(b).empty).toHaveLength(81)
+    expect(act(b).empty).toHaveLength(114)
   })
 
   it('warns once, suggesting Export, when the saved state grows past about 12 KB', async () => {

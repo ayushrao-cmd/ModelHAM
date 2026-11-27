@@ -10,7 +10,7 @@ export function EquityWaterfallChart({ result }: { result: ModelResult }) {
   const motionOff = useReducedMotion()
   const rows = waterfallData(result).map(s => ({ ...s, range: [Math.min(s.start, s.end), Math.max(s.start, s.end)] as [number, number] }))
   return (
-    <ChartFrame title="Equity cash waterfall, ₹ Cr (invested to net returned)" empty={!result.ops.length}
+    <ChartFrame title="Equity cash waterfall, ₹ Cr (invested to net returned)" empty={!result.cash.annual.equityPost.some(v => v !== 0)}
       height={44 * rows.length + 48}>
       <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 64 }}>
         <CartesianGrid {...gridProps} horizontal={false} vertical />

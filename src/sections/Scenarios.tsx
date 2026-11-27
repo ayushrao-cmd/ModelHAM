@@ -24,6 +24,7 @@ const KEY_LABEL: Record<string, string> = { day: 'day', physical: 'physical', fi
 function show(f: FieldDef, v: unknown, key?: string): string {
   if (v === undefined) return '—'
   if (typeof v === 'string') return f.kind === 'date' ? fmt.date(v) : f.options?.find(o => o.value === v)?.label ?? v
+  if (typeof v === 'boolean') return v ? 'On' : 'Off'
   if (typeof v !== 'number') return String(v)
   if (key === 'day') return `Day ${fmt.num(v, 0)}`
   if (f.kind === 'money') return fmt.cr(v)
@@ -41,7 +42,7 @@ const withoutEmpty = (s: Values) => s.empty.reduce<unknown>((i, p) => setAt(i, p
 export function diffInputs(sa: Values, sb: Values) {
   const out: { id: string; label: string; a: string; b: string }[] = []
   const a = withoutEmpty(sa), b = withoutEmpty(sb)
-  for (const f of FIELDS) {
+  for (const f of FIELDS.filter(x => !x.hidden)) {
     const va = getAt(a, f.id), vb = getAt(b, f.id)
     if (same(va, vb)) continue
     if (!Array.isArray(va) || !Array.isArray(vb)) { out.push({ id: f.id, label: f.label, a: show(f, va), b: show(f, vb) }); continue }

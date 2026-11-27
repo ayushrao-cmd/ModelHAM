@@ -1,7 +1,7 @@
 import { IncomeChart } from '../charts/IncomeChart'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
-import { annuityRate, omSchedule } from '../engine/operations'
+import { omRates } from '../engine/v16/revenue'
 import { fmt } from '../lib/format'
 import { useResult } from '../state/useModel'
 import { Panel, SectionLayout, Stats } from './SectionLayout'
@@ -10,29 +10,32 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 
 function IncomeResults() {
   const r = useResult()
-  const i = r.inputs, ops = r.ops
-  const completion = sum(ops.map(p => p.completionPayment)), interest = sum(ops.map(p => p.interestIncome)), om = sum(ops.map(p => p.omPayment))
+  const i = r.inputs, v = r.revenue
+  const completion = sum(v.instalment), interest = sum(v.interest), om = sum(v.om), bonus = sum(v.bonus)
+  const b = i.income.bankRates, rate = sum(b) / b.length + i.income.spread
   const ry = i.operations.resurfacingYears
-  const basis = (y: number) => y === 1 ? 'None in the first year' : ry.includes(y) ? 'Resurfacing year' : ry.includes(y + 1) ? 'Year before resurfacing' : 'Base rate'
+  const basis = (y: number, rate: number) => rate === 0 ? 'None in the first year' : ry.includes(y) ? 'Resurfacing year'
+    : rate === i.income.omBaseRate ? 'Base rate' : 'Before resurfacing'
+  // Concession year y is paid on annuities 2y − 1 and 2y.
+  const paidInYear = (y: number) => v.om[2 * y - 2] + (v.om[2 * y - 1] ?? 0)
   return <>
     <Stats items={[
-      { label: 'Total completion payments', value: fmt.cr(completion), sub: `Indexed base ${fmt.cr(r.kpis.completionCostBase)}` },
-      { label: 'Annuity rate', value: fmt.pct(annuityRate(i)), sub: `${fmt.cr(interest)} interest on the balance` },
+      { label: 'Total completion payments', value: fmt.cr(completion), sub: `Base ${fmt.cr(r.kpis.completionBase)}: indexed bid less Construction Support` },
+      { label: 'Annuity rate', value: fmt.pct(rate), sub: `${fmt.cr(interest)} interest on the balance, half the rate each half-year` },
       { label: 'Total O&M payments', value: fmt.cr(om), sub: `Over ${i.deal.operateYears} operating years, indexed` },
     ]} />
     <Panel><IncomeChart result={r} /></Panel>
     <Panel>
-      <DataTable title="Income by payment period" description="₹ Cr, half-yearly"
-        columns={[{ label: 'Period' }, { label: 'Date' }, { label: 'Completion' }, { label: 'Interest' }, { label: 'O&M' }, { label: 'Total' }]}
-        rows={ops.map(p => [String(p.n), fmt.date(p.day), p.completionPayment, p.interestIncome, p.omPayment,
-          p.completionPayment + p.interestIncome + p.omPayment])}
-        total={['Total', '', completion, interest, om, completion + interest + om]} className="max-h-96" />
+      <DataTable title="Income by annuity date" description="₹ Cr, half-yearly"
+        columns={[{ label: 'Annuity' }, { label: 'Date' }, { label: 'Completion' }, { label: 'Interest' }, { label: 'O&M' }, { label: 'Bonus' }, { label: 'Total' }]}
+        rows={v.dates.map((d, k) => [String(k + 1), fmt.date(d), v.instalment[k], v.interest[k], v.om[k], v.bonus[k],
+          v.instalment[k] + v.interest[k] + v.om[k] + v.bonus[k]])}
+        total={['Total', '', completion, interest, om, bonus, completion + interest + om + bonus]} className="max-h-96" />
     </Panel>
     <Panel>
-      <DataTable title="O&M payment schedule" description="Rate as a share of Bid Price per operating year, derived from the pavement type and resurfacing years"
+      <DataTable title="O&M payment schedule" description="Rate as a share of Bid Price per operating year, from the pavement type and resurfacing years"
         columns={[{ label: 'Year' }, { label: 'Basis' }, { label: 'Rate', format: n => fmt.pct(n) }, { label: 'Payment (₹ Cr)' }]}
-        rows={omSchedule(i).map((rate, k) => [String(k + 1), basis(k + 1), rate,
-          sum(ops.filter(p => p.year === k + 1).map(p => p.omPayment))])}
+        rows={omRates(i).map((rt, k) => [String(k + 1), basis(k + 1, rt), rt, paidInYear(k + 1)])}
         total={['Total', '', '', om]} />
     </Panel>
   </>

@@ -80,7 +80,7 @@ describe('mergeWithDefaults: dates, selects and fixed values', () => {
     const m = mergeWithDefaults({ deal: { pavement: 'gravel' }, build: { phasing: 'random' } })
     expect(m.deal.pavement).toBe(DEFAULT_INPUTS.deal.pavement)
     expect(m.build.phasing).toBe(DEFAULT_INPUTS.build.phasing)
-    expect(mergeWithDefaults({ build: { phasing: 'sCurve' } }).build.phasing).toBe('sCurve')
+    expect(mergeWithDefaults({ build: { phasing: 'scheduleG' } }).build.phasing).toBe('scheduleG')
   })
   it('forces Operate Years to 15', async () => {
     const { mergeWithDefaults } = await fresh()
@@ -296,6 +296,43 @@ describe('store', () => {
     expect(st().scenarios).toHaveLength(1)
     expect(st().scenarios[0].inputs).toEqual(DEFAULT_INPUTS)
     expect(st().activeId).toBe(st().scenarios[0].id)
+  })
+
+  it('v2 blank project migrates: its empty ranges decode by the v2 index, filled values stay, the v3 blank fields are empty', async () => {
+    const { BLANK_EMPTY, BLANK_EMPTY_V3, V3_BLANK_PATHS, encodeEmpty } = await import('./projects')
+    const v2 = BLANK_EMPTY_V3.filter(p => !V3_BLANK_PATHS.includes(p)) // v2's list: the v3 list less the fields v3 appended
+    expect(BLANK_EMPTY_V3.slice(0, v2.length)).toEqual(v2)
+    // Filled: bid price, a field past the hidden ones (its index differs between the lists) and one cell of a list.
+    const filled = ['deal.bidPrice', 'operations.routine', 'capital.repayment.0']
+    expect(BLANK_EMPTY_V3.indexOf('operations.routine')).not.toBe(BLANK_EMPTY.indexOf('operations.routine'))
+    const was = v2.filter(p => !filled.includes(p))
+    // As v2 saved a partly filled list: the whole field, its empty cells holding the neutral 0.
+    const inputs = { deal: { bidPrice: 2000 }, operations: { routine: 3.5 }, capital: { repayment: [0.04, ...new Array(24).fill(0)] } }
+    cookies.set(KEY, JSON.stringify({ state: { projectId: 'b', projects: [{ id: 'b', template: 'blank', baseId: 's', activeId: 's',
+      scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: encodeEmpty(was, BLANK_EMPTY_V3) }] }] }, version: 2 }))
+    const { useStore } = await fresh()
+    const sc = useStore.getState().scenarios[0]
+    expect(sc.inputs.deal.bidPrice).toBe(2000)
+    expect(sc.inputs.operations.routine).toBe(3.5)
+    expect(sc.inputs.capital.repayment[0]).toBe(0.04)
+    expect(sc.empty).toEqual(BLANK_EMPTY.filter(p => !filled.includes(p)))
+    expect(sc.empty).toContain('capital.repayment.1')
+    expect(sc.empty).toContain('build.spvManpower')
+    expect(sc.empty).toContain('build.manualPhasing.35')
+    expect(sc.inputs.build.spvManpower).toBe(0) // neutral, not the demo 1.5
+    expect(sc.inputs.build.phasing).toBe('equated') // v2's template phasing, never saved
+  })
+
+  it('a new blank project has the V16 blank fields empty and the policy fields pre-filled', async () => {
+    const { useStore } = await fresh()
+    useStore.getState().createProject('blank')
+    const s = useStore.getState(), sc = s.scenarios.find(x => x.id === s.activeId)!
+    expect(sc.empty).toContain('build.spvManpower')
+    expect(sc.empty).toContain('build.manualPhasing.0')
+    for (const p of ['stl.pctOfBid', 'funds.fdRate', 'csr.on', 'csr.rate', 'tax.depLifeYears', 'indexation.pim', 'build.flcAnnual', 'build.patrolRentalPerMonth'])
+      expect(sc.empty, p).not.toContain(p)
+    expect(sc.inputs.stl.pctOfBid).toBe(0.1)
+    expect(sc.inputs.indexation.pim).toBe(0.04)
   })
 })
 

@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DscrChart } from '../charts/DscrChart'
 import { EquityWaterfallChart } from '../charts/EquityWaterfallChart'
 import { TornadoChart } from '../charts/TornadoChart'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
 import type { ModelResult } from '../engine/model'
-import { tornado } from '../engine/sensitivity'
+import { type TornadoBar, tornado } from '../engine/sensitivity'
+import type { Inputs } from '../engine/types'
 import { fmt } from '../lib/format'
 import { useStore } from '../state/store'
 import { ResultsGate } from '../components/ResultsGate'
@@ -13,10 +14,20 @@ import { useModel, useResult } from '../state/useModel'
 import { Panel, SectionLayout, Segmented } from './SectionLayout'
 
 type Metric = 'equityIrr' | 'dscrMin'
+const TORNADO_SETTLE_MS = 400 // after the last edit
 const METRICS: Record<Metric, { label: string; get(r: ModelResult): number | null; format(n: number | null): string }> = {
   equityIrr: { label: 'Equity IRR', get: r => r.kpis.equityIrr, format: n => fmt.pct(n) },
   dscrMin: { label: 'Min DSCR', get: r => r.kpis.dscrMin, format: fmt.x },
 }
+
+/** Every IRR the original reports (Fin-IGAAP IRR block), headline first. */
+export const IRRS: [string, (x: ModelResult) => number | null][] = [
+  ['Equity, post-tax (half-yearly)', x => x.kpis.equityIrr], ['Equity, pre-tax (half-yearly)', x => x.kpis.equityIrrPre],
+  ['Equity, post-tax (annual)', x => x.kpis.equityIrrAnnualPost], ['Equity, pre-tax (annual)', x => x.kpis.equityIrrAnnualPre],
+  ['Equity, post-tax, mobilisation-advance adjusted', x => x.kpis.equityIrrMobAdj],
+  ['Equity, pre-tax, mobilisation-advance adjusted', x => x.cash.irr.equityMobAdjPre],
+  ['Project, pre-tax (annual)', x => x.kpis.projectIrrPre], ['Project, post-tax (annual)', x => x.kpis.projectIrrPost],
+]
 
 /** IRR table; the Base column only when another scenario is active and the base is complete. */
 function IrrTable() {
@@ -25,13 +36,11 @@ function IrrTable() {
   const isBase = useStore(s => s.activeId === s.baseId)
   const showBase = !isBase && base
   const irr = (n: number | null) => n ?? '—'
-  const rows: [string, (x: ModelResult) => number | null][] = [
-    ['Project pre-tax', x => x.kpis.projectIrrPre], ['Project post-tax', x => x.kpis.projectIrrPost], ['Equity', x => x.kpis.equityIrr]]
   return (
     <Panel>
-      <DataTable title="Internal rates of return" description="XIRR on dated cash flows: project flows before and after tax, and equity draws against equity cash."
+      <DataTable title="Internal rates of return" description="As the original workbook: project IRRs on annual flows; the headline equity IRR on half-yearly annuity dates (XIRR). A dash: no IRR exists for these flows."
         columns={[{ label: 'Return' }, { label: 'IRR', format: n => fmt.pct(n) }, ...(showBase ? [{ label: 'Base', format: (n: number) => fmt.pct(n) }] : [])]}
-        rows={rows.map(([l, f]) => [l, irr(f(r)), ...(showBase ? [irr(f(showBase))] : [])])} />
+        rows={IRRS.map(([l, f]) => [l, irr(f(r)), ...(showBase ? [irr(f(showBase))] : [])])} />
     </Panel>
   )
 }
@@ -39,8 +48,19 @@ function IrrTable() {
 function ReturnsResults() {
   const r = useResult()
   const [metric, setMetric] = useState<Metric>('equityIrr')
-  // 13 model runs: only when the inputs or the metric change.
-  const bars = useMemo(() => tornado(r.inputs, METRICS[metric].get), [r.inputs, metric])
+  // 13 model runs (about a second): only once the inputs or the metric have settled, so typing stays responsive.
+  // Until then the previous bars stay, marked as updating. A run that throws gives `bars: null`, shown as an error.
+  const [done, setDone] = useState<{ for: Inputs; metric: Metric; bars: TornadoBar[] | null } | null>(null)
+  useEffect(() => {
+    if (done?.for === r.inputs && done.metric === metric) return
+    const t = setTimeout(() => {
+      let bars: TornadoBar[] | null = null
+      try { bars = tornado(r.inputs, METRICS[metric].get) } catch { /* shown as an error below */ }
+      setDone({ for: r.inputs, metric, bars })
+    }, TORNADO_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [r.inputs, metric, done])
+  const stale = !done || done.for !== r.inputs || done.metric !== metric
   return <>
     <Panel><DscrChart result={r} /></Panel>
     <Panel><EquityWaterfallChart result={r} /></Panel>
@@ -50,7 +70,11 @@ function ReturnsResults() {
         <Segmented label="Sensitivity metric" value={metric} onChange={setMetric}
           options={(Object.keys(METRICS) as Metric[]).map(m => ({ value: m, label: METRICS[m].label }))} />
       </div>
-      <TornadoChart bars={bars} format={METRICS[metric].format} />
+      <div aria-busy={stale} className={stale ? 'opacity-60 motion-safe:transition-opacity' : undefined}>
+        {done && done.metric === metric ? (done.bars ? <TornadoChart bars={done.bars} format={METRICS[metric].format} />
+          : <p role="alert" className="py-10 text-center text-sm text-destructive">Couldn't work out the sensitivities for these inputs.</p>)
+          : <p role="status" className="py-10 text-center text-sm text-muted-foreground">Working out the sensitivities…</p>}
+      </div>
     </Panel>
   </>
 }

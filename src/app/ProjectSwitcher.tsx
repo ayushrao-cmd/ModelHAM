@@ -15,7 +15,7 @@ import { allProjects, type Project, projectLabel, useStore } from '../state/stor
 function fillTag(p: Project) {
   if (p.template === 'sample') return 'Sample'
   const base = p.scenarios.find(s => s.id === p.baseId) ?? p.scenarios[0]
-  const { filled, total } = missingOf(base.empty)
+  const { filled, total } = missingOf(base.inputs, base.empty)
   return filled < total ? `${Math.floor((filled / total) * 100)}% filled` : null
 }
 

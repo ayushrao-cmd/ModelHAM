@@ -17,6 +17,8 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 
 const wrap = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvider>)
 const fill = (paths: string[]) => { for (const p of paths) useStore.getState().setInput(p, getAt(DEFAULT_INPUTS, p)) }
+/** What a fresh blank project needs: everything empty but manual EPC phasing (its phasing is Equated). */
+const REQUIRED = BLANK_EMPTY.filter(p => !p.startsWith('build.manualPhasing.'))
 function Results() { const r = useResult(); return <p>IRR {r.kpis.equityIrr?.toFixed(4)}</p> }
 
 beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.location.hash = '' })
@@ -29,14 +31,57 @@ describe('gating', () => {
     const m = result.current
     expect(m.active).toBeNull()
     expect(m.base).toBeNull()
-    expect(m.missing.paths).toEqual(BLANK_EMPTY)
+    expect(m.missing.paths).toEqual(REQUIRED)
     expect(m.missing.filled).toBe(0)
-    expect(m.missing.total).toBe(BLANK_EMPTY.length)
+    expect(m.missing.total).toBe(REQUIRED.length)
     expect(m.checks.length).toBe(m.missing.byField.length)
     expect(m.checks.every(c => c.id.startsWith('field:') && !c.pass && c.severity === 'error')).toBe(true)
     expect(m.checks.find(c => c.id === 'field:deal.bidPrice')!.message).toBe('Required')
     expect(m.checks.find(c => c.id === 'field:capital.repayment')!.message).toBe('25 of 25 values missing')
     expect(m.checks.some(c => c.id === 'financing-tieup')).toBe(false)
+  })
+
+  it('an invalid bid date (the engine would throw) gives no result and a blocking check, never a crash', () => {
+    useStore.getState().setInput('deal.bidDate', '2026-02-30')
+    const { result } = renderHook(() => useModel())
+    expect(result.current.active).toBeNull()
+    expect(result.current.missing.paths).toEqual([])
+    expect(result.current.checks.map(c => c.id)).toEqual(['field:deal.bidDate'])
+    expect(result.current.score.errors).toBe(1)
+    wrap(<ResultsGate><Results /></ResultsGate>)
+    expect(screen.getByRole('alert').textContent).toMatch(/can't run on these inputs.*Bid Date must be a valid date/)
+    expect(screen.getByRole('button', { name: 'Go to Bid Date' })).toBeTruthy()
+  })
+
+  it('milestones past the build give no result and one milestone cause with a jump, never NaN', () => {
+    useStore.getState().setInput('deal.buildDays', 700)
+    const { result } = renderHook(() => useModel())
+    expect(result.current.active).toBeNull()
+    expect(result.current.checks.map(c => c.id)).toEqual(['field:milestones'])
+    wrap(<ResultsGate><Results /></ResultsGate>)
+    expect(screen.getByRole('alert').textContent).toMatch(/Milestone 3: day 821 must be a whole day within the 700 build days/)
+    expect(screen.getByRole('alert').textContent).not.toMatch(/NaN/)
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Build Milestones' }))
+    expect(window.location.hash).toBe('#/phasing?focus=milestones')
+  })
+
+  it('Schedule G with no milestones gives no result and a blocking check', () => {
+    act(() => { useStore.getState().setInput('milestones', []); useStore.getState().setInput('build.phasing', 'scheduleG') })
+    const { result } = renderHook(() => useModel())
+    expect(result.current.active).toBeNull()
+    expect(result.current.checks.map(c => c.id)).toEqual(['schedule-g-milestones'])
+  })
+
+  it('an engine failure past the gate points at the failing input and lists the failing input checks', () => {
+    useStore.getState().setInput('deal.daysToAward', -1e6) // the grid cannot place the dates: the engine throws
+    const { result } = renderHook(() => useModel())
+    expect(result.current.active).toBeNull()
+    const [run, ...inputs] = result.current.blocked
+    expect(run).toMatchObject({ id: 'model-run', fieldId: 'deal.daysToAward' })
+    expect(inputs.map(c => c.id)).toContain('field:deal.daysToAward')
+    expect(result.current.checks).toEqual(result.current.blocked)
+    wrap(<ResultsGate><Results /></ResultsGate>)
+    expect(screen.getAllByRole('button', { name: 'Go to Days to Award' }).length).toBeGreaterThan(0)
   })
 
   it('filling the last field makes results appear', () => {
@@ -73,11 +118,10 @@ describe('ResultsGate', () => {
     useStore.getState().setInput('deal.bidPrice', 1800)
     wrap(<ResultsGate><Results /></ResultsGate>)
     expect(screen.queryByText(/^IRR/)).toBeNull()
-    const n = useStore.getState().scenarios[0].empty.length
     expect(screen.getByRole('heading', { name: /Fill in \d+ more fields to see results/ })).toBeTruthy()
     const bar = screen.getByRole('progressbar')
-    expect(bar.getAttribute('aria-valuenow')).toBe(String(BLANK_EMPTY.length - n))
-    expect(bar.getAttribute('aria-valuemax')).toBe(String(BLANK_EMPTY.length))
+    expect(bar.getAttribute('aria-valuenow')).toBe('1')
+    expect(bar.getAttribute('aria-valuemax')).toBe(String(REQUIRED.length))
     const deal = screen.getByRole('list', { name: 'Deal & Timeline' })
     expect(within(deal).queryByRole('button', { name: /Bid Price/ })).toBeNull() // filled
     fireEvent.click(within(deal).getByRole('button', { name: /Authority Estimate/ }))

@@ -8,16 +8,17 @@ import { exportScenarioJson, exportSchedulesCsv, toCsv } from './export'
 beforeEach(() => useStore.setState(useStore.getInitialState(), true))
 
 describe('exportSchedulesCsv', () => {
-  it('has a header and one row per build month and ops period, with ISO dates and a phase', () => {
+  it('has a header and one row per construction-grid month and per FY, with ISO dates and a phase', () => {
     const r = runModel(DEFAULT_INPUTS)
     const lines = exportSchedulesCsv(r).trim().split('\n')
     const header = lines[0].split(',')
     expect(header.slice(0, 2)).toEqual(['phase', 'date'])
-    expect(lines).toHaveLength(1 + r.build.months.length + r.ops.length)
+    expect(lines).toHaveLength(1 + r.grid.periods.length + r.grid.fys.length)
     const rows = lines.slice(1).map(l => l.split(','))
     expect(rows.every(c => c.length === header.length)).toBe(true)
     expect(rows[0][0]).toBe('build')
-    expect(rows[rows.length - 1][0]).toBe('operate')
+    expect(rows.some(c => c[0] === 'cod')).toBe(true)
+    expect(rows[rows.length - 1][0]).toBe('year')
     expect(rows.every(c => /^\d{4}-\d{2}-\d{2}$/.test(c[1]))).toBe(true)
   })
 })

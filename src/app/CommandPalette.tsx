@@ -14,12 +14,13 @@ export const RANK = { error: 0, warning: 1, info: 2 }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
 export function CheckIcon({ c }: { c: Check }) {
+  if (c.group === 'notes') return <Info className="text-muted-foreground" aria-hidden="true" />
   if (c.pass) return <CircleCheck className="text-success" aria-hidden="true" />
   if (c.severity === 'error') return <CircleAlert className="text-destructive" aria-hidden="true" />
   if (c.severity === 'warning') return <TriangleAlert className="text-warning" aria-hidden="true" />
   return <Info className="text-muted-foreground" aria-hidden="true" />
 }
-export const status = (c: Check) => (c.pass ? 'Passed' : c.severity === 'error' ? 'Error' : c.severity === 'warning' ? 'Warning' : 'Note')
+export const status = (c: Check) => (c.group === 'notes' ? 'Method note' : c.pass ? 'Passed' : c.severity === 'error' ? 'Error' : c.severity === 'warning' ? 'Warning' : 'Note')
 
 /** ⌘K / Ctrl+K: jump to a section, a field or a health check. Includes its own top-bar trigger. */
 export function CommandPalette() {
@@ -63,7 +64,7 @@ export function CommandPalette() {
             ))}
           </CommandGroup>
           <CommandGroup heading="Fields">
-            {FIELDS.map(f => {
+            {FIELDS.filter(f => !f.hidden).map(f => {
               const sec = sectionMeta(f.section).label
               return (
                 <CommandItem key={f.id} value={`field:${f.id} ${f.label}`} keywords={[sec, f.group]} onSelect={() => jump(f.section, f.id)}>

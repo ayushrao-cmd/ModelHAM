@@ -1,30 +1,40 @@
 // Scenario JSON and schedule CSV export, plus the browser download. Pure except `download`.
 import { toIso } from '../engine/dates'
-import type { BuildMonth } from '../engine/build'
 import type { ModelResult } from '../engine/model'
-import type { OpsPeriod } from '../engine/operations'
+import type { ConstructionMonth } from '../engine/v16/construction'
 import type { Scenario } from '../state/store'
 
 export type Cell = string | number
 
-const cell = (v: Cell) => (typeof v === 'number' ? String(Number(v.toFixed(6))) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+// A non-finite number (NaN = a blank statement cell) is an empty cell, never "NaN".
+const cell = (v: Cell) => (typeof v === 'number' ? (Number.isFinite(v) ? String(Number(v.toFixed(6))) : '') : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 export const toCsv = (header: string[], rows: Cell[][]) => [header, ...rows].map(r => r.map(cell).join(',')).join('\n')
 
 /** The shape importScenario accepts back; `empty` lists the values not filled in yet. */
 export const exportScenarioJson = (s: Scenario): string => JSON.stringify({ name: s.name, inputs: s.inputs, empty: s.empty }, null, 2)
 
-const BUILD: (keyof BuildMonth)[] = ['epc', 'otherUses', 'gstPaid', 'idc', 'supportReceived', 'supportGst', 'equityDraw', 'debtDraw',
-  'debtBalance', 'cumPhysical', 'cumCost', 'cumFunding']
-const OPS: (keyof OpsPeriod)[] = ['n', 'year', 'completionPayment', 'interestIncome', 'omPayment', 'gstRecovery', 'opex', 'tax', 'cfads',
-  'debtOpening', 'principal', 'interest', 'debtClosing', 'reserveBalance', 'reserveMovement', 'wcRelease', 'equityCash', 'dscr', 'balanceOutstanding']
+const MONTH: (keyof ConstructionMonth)[] = ['epcFixed', 'epcVariable', 'tpc', 'idc', 'postCodInterest', 'opex', 'grant', 'grantGst',
+  'equityUpfront', 'equityDeferred', 'debtDraw', 'debtBalance', 'stlDraw', 'stlRepay', 'stlBalance', 'dsrPrincipal', 'dsrInterest']
+/** Per FY of the grid, from the result. */
+const YEAR: [string, (r: ModelResult) => (number | null)[]][] = [
+  ['opex', r => r.opex.total], ['interestOnFunds', r => r.funds.interestOnFunds], ['tax', r => r.tax.tax], ['csr', r => r.igaap.csr],
+  ['pat', r => r.igaap.pat], ['cfads', r => r.cash.cfads], ['debtRepayment', r => r.debt.repayment], ['debtInterest', r => r.debt.interest],
+  ['debtClosing', r => r.debt.closing], ['dscr', r => r.cash.dscr],
+  ['dsrClosing', r => r.funds.dsrInterest.closing.map((v, k) => v + r.funds.dsrPrincipal.closing[k])],
+  ['mmrClosing', r => r.funds.mmr.closing], ['ffeClosing', r => r.funds.ffe.closing], ['cashClosing', r => r.cash.closing],
+  ['equityFlowPost', r => r.cash.annual.equityPost],
+]
 
-/** One table: a row per build month then per operating period; columns the other phase lacks stay blank. ₹ Cr throughout. */
+/** One table: a row per construction-grid month ('build', then 'cod' up to the 1st annuity), then per financial year
+ *  ('year', dated at the FY end); columns the other kind lacks stay blank. ₹ Cr throughout. */
 export function exportSchedulesCsv(r: ModelResult): string {
   const blank = (n: number) => new Array<Cell>(n).fill('')
   const val = (v: unknown): Cell => (typeof v === 'number' && Number.isFinite(v) ? v : '')
-  return toCsv(['phase', 'date', ...BUILD, ...OPS], [
-    ...r.build.months.map(m => ['build', toIso(m.day), ...BUILD.map(k => val(m[k])), ...blank(OPS.length)]),
-    ...r.ops.map(p => ['operate', toIso(p.day), ...blank(BUILD.length), ...OPS.map(k => val(p[k]))]),
+  const years = YEAR.map(([, f]) => f(r))
+  return toCsv(['phase', 'date', ...MONTH, ...YEAR.map(([k]) => k)], [
+    ...r.construction.months.map((m, k) => [r.grid.periods[k].kind === 'construction' ? 'build' : 'cod', toIso(r.grid.periods[k].end),
+      ...MONTH.map(key => val(m[key])), ...blank(YEAR.length)]),
+    ...r.grid.fys.map((d, k) => ['year', toIso(d), ...blank(MONTH.length), ...years.map(s => val(s[k]))]),
   ]) + '\n'
 }
 
