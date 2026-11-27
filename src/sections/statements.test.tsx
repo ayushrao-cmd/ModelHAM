@@ -2,8 +2,16 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { StatementsView } from '../components/statements/StatementsView'
+import { DEFAULT_INPUTS } from '../engine/defaults'
+import { statementChecks } from '../engine/health'
+import { runModel } from '../engine/model'
+import { buildIgaap } from '../engine/v16/statements/igaap'
+import { buildIndas } from '../engine/v16/statements/indas'
 import { useStore } from '../state/store'
 import { Statements } from './Statements'
+
+const R = runModel(DEFAULT_INPUTS)
 
 const view = (hash = '#/statements') => {
   window.location.hash = hash
@@ -45,6 +53,16 @@ describe('Statements section on the sample (original-method engine)', () => {
     const rows = screen.getAllByRole('row')
     const at = rows.findIndex(r => /Total Revenue/.test(r.textContent ?? ''))
     expect(rows.slice(at + 1, at + 6).map(r => r.querySelector('th')!.textContent!.match(/A\.\d/)?.[0])).toEqual(['A.1', 'A.2', 'A.3', 'A.4', 'A.5'])
+  })
+
+  it.each([[0.007, true], [0.02, false]])('a BS gap of %s: the screen and Health agree (balanced: %s)', (gap, ok) => {
+    const r = structuredClone(R)
+    r.funds.mmr.closing[5] += gap // an asset off by the gap in FY32
+    render(<StatementsView sets={{ igaap: buildIgaap(r), indas: buildIndas(r) }} standard="igaap" tab="bs" />)
+    expect(screen.getByRole('status').textContent).toMatch(ok ? /Balances in every year/ : /Out of balance in FY32/)
+    const row = screen.getByRole('row', { name: /BS Check/ })
+    expect(row.querySelector('th')!.className.includes('text-destructive')).toBe(!ok)
+    expect(statementChecks(r).find(c => c.id === 'bs-balance')!.pass).toBe(ok)
   })
 
   it('switching the standard and the tab writes ?std= and ?tab= to the URL', async () => {

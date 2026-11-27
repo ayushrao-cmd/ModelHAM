@@ -17,7 +17,10 @@ export interface Check { id: string; title: string; section: SectionId; fieldId?
 
 const SUM_TOL = 1e-6 // schedules must total 100% to within float residue
 const MONEY_TOL = 0.005 // ₹ Cr; below this an amount displays as ₹0.00 Cr
-const RECON_TOL = 0.01 // ₹ Cr; the funding fixed points converge to this
+/** ₹ Cr; the funding fixed points converge to this. The statement checks (here and on the Statements screen) tie to it. */
+export const RECON_TOL = 0.01
+/** A reconciliation gap within tolerance; NaN does not tie. Health and the Statements banners and check rows share it. */
+export const ties = (gap: number) => Math.abs(gap) <= RECON_TOL
 const RATIO_TOL = 1e-9 // float residue on DSCR comparisons
 const IRR_TOL = 1e-6 // XIRR converges to about this
 export const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
@@ -333,12 +336,12 @@ export function statementChecks(r: ModelResult): Check[] {
   const fy = (k: number) => `${fmt.fy(fys[k])} (${fmt.date(fys[k])})`
   const span = n ? `${fmt.fy(fys[0])} to ${fmt.fy(fys[n - 1])}` : ''
   const bsRow = (id: string) => (s.statements.find(x => x.key === 'bs')!.rows.find((x: Row) => x.id === id)?.values ?? [])
-  const firstGap = (gaps: number[]) => gaps.findIndex(v => !(Math.abs(v) <= RECON_TOL))
+  const firstGap = (gaps: number[]) => gaps.findIndex(v => !ties(v))
   const c = r.construction, cash = r.cash, months = c.months, debt = r.debt
   const last = (xs: number[]) => xs[xs.length - 1] ?? 0
 
   const bs = firstGap(s.checks.bs)
-  const neg = s.checks.cash.findIndex(v => v !== 0)
+  const neg = firstGap(s.checks.cash) // a 0/1 flag: 1 (or blank) fails, as on the Statements screen
   const tie = firstGap(cash.closing.map((v, k) => v - (k ? cash.closing[k - 1] : 0) - cash.inflow[k] - cash.outflow[k]))
   const equityBs = last(bsRow('bs.A.1')) + last(bsRow('bs.A.2')), equityDrawn = sum(months.map(m => m.equityShareCapital + m.equityUsl))
   const equityOff = [equityBs - c.equity, equityDrawn - c.equity].findIndex(v => !(Math.abs(v) <= RECON_TOL))

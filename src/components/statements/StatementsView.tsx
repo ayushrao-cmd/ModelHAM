@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { copy } from '../../lib/export'
+import { ties } from '../../engine/health'
 import { fmt } from '../../lib/format'
 import { Segmented } from '../../sections/SectionLayout'
-import { type Statement, type StatementSet, StatementTable, statementCsv, TIE } from './StatementTable'
+import { type Statement, type StatementSet, StatementTable, statementCsv } from './StatementTable'
 
 export type Standard = StatementSet['standard']
 export type StatementTab = Statement['key']
@@ -33,7 +34,7 @@ function Banner({ pass, children }: { pass: boolean; children: ReactNode }) {
 function Check({ set, tab }: { set: StatementSet; tab: StatementTab }) {
   if (tab !== 'bs' && tab !== 'cf') return null
   const gaps = tab === 'bs' ? set.checks.bs : set.checks.cash
-  const k = set.years.findIndex((_, n) => !(Math.abs(gaps[n]) < TIE))
+  const k = set.years.findIndex((_, n) => !ties(gaps[n]))
   if (k < 0) return <Banner pass>{tab === 'bs' ? 'Balances in every year.' : 'Cash is non-negative in every year.'}</Banner>
   const fy = fmt.fy(set.years[k]), g = gaps[k]
   if (tab === 'cf') return <Banner pass={false}>Cash is negative in {fy}.</Banner>

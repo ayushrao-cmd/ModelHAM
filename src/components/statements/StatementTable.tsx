@@ -4,16 +4,17 @@ import { cn } from '@/lib/utils'
 import type { Day } from '../../engine/dates'
 import type { Row, Statement } from '../../engine/v16/types'
 import { type Cell, toCsv } from '../../lib/export'
+import { ties } from '../../engine/health'
 import { fmt } from '../../lib/format'
 
 export type { Row, Statement, StatementSet } from '../../engine/v16/types'
 
 const MAX_DEPTH = 3 // children nest at most three levels below a statement line (Row contract); screen and CSV alike
-/** ₹ Cr. Below this an amount shows as ₹0.00, so as a dash; the check rows and banners use the same tie. */
-export const TIE = 0.005
+/** ₹ Cr. Below this an amount shows as ₹0.00, so as a dash. Display only: checks tie to Health's RECON_TOL (`ties`). */
+const NIL = 0.005
 
 /** Accounting style: negatives in parentheses, nil as a dash. */
-export const acct = (v: number) => (Math.abs(v) < TIE ? '–' : v < 0 ? `(${fmt.num(-v)})` : fmt.num(v))
+export const acct = (v: number) => (Math.abs(v) < NIL ? '–' : v < 0 ? `(${fmt.num(-v)})` : fmt.num(v))
 /** One cell by the row's unit; NaN (V16 blank) is an empty cell. */
 export function cellText(v: number, unit: Row['unit']): string {
   if (Number.isNaN(v)) return ''
@@ -34,7 +35,7 @@ function flatten(rows: Row[], open: (r: Row) => boolean, depth = 0, out: { row: 
   return out
 }
 const holds = (r: Row, id: string): boolean => !!r.children?.some(c => c.id === id || holds(c, id))
-const failing = (r: Row) => r.values.some(v => !(Math.abs(v) < TIE))
+const failing = (r: Row) => r.values.some(v => !ties(v)) // as the banner: a blank year fails too
 
 /** The statement as CSV, every row the screen can show (to MAX_DEPTH) indented by depth, whatever is expanded. */
 export function statementCsv(st: Statement, years: Day[]): string {

@@ -237,7 +237,7 @@ describe('StatementsView', () => {
   it.each(['igaap', 'indas'] as const)('check banners pass for %s when every year balances and cash stays non-negative', std => {
     const { rerender } = render(<StatementsView sets={sets} standard={std} tab="bs" />)
     expect(screen.getByRole('status').textContent).toMatch(/Balances in every year/)
-    // The check row's 0.004 gaps display as nil, with the same tie as the banner.
+    // The check row's 0.004 gaps display as nil and tie, as in the banner.
     expect(screen.getByRole('row', { name: /Check/ }).querySelector('th')!.className).not.toContain('text-destructive')
     rerender(<StatementsView sets={sets} standard={std} tab="cf" />)
     expect(screen.getByRole('status').textContent).toMatch(/Cash is non-negative in every year/)
@@ -250,8 +250,8 @@ describe('StatementsView', () => {
     const bad = (checks: StatementSet['checks']) => ({ igaap: set('igaap', checks), indas: sets.indas })
     const { rerender } = render(<StatementsView sets={bad({ bs: gaps([0.004, -3, 0.4]), cash: gaps([0, 1]) })} tab="bs" />)
     expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY28 by \(₹3\.00 Cr\)/)
-    rerender(<StatementsView sets={bad({ bs: gaps([0, 0.005]), cash: zero })} tab="bs" />)
-    expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY28 by ₹0\.01 Cr/)
+    rerender(<StatementsView sets={bad({ bs: gaps([0, 0.02]), cash: zero })} tab="bs" />)
+    expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY28 by ₹0\.02 Cr/)
     rerender(<StatementsView sets={bad({ bs: zero, cash: gaps([0, 1]) })} tab="cf" />)
     expect(screen.getByRole('status').textContent).toMatch(/Cash is negative in FY28/)
   })
@@ -262,6 +262,24 @@ describe('StatementsView', () => {
     expect(screen.getByRole('status').textContent).not.toMatch(/NaN|Balances/)
     rerender(<StatementsView sets={{ igaap: set('igaap', { bs: zero.slice(0, 10), cash: zero }), indas: sets.indas }} tab="bs" />)
     expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY37/)
+  })
+
+  it("banner and check row tie to Health's RECON_TOL: a 0.007 gap balances; 0.02 and a blank year fail, both alike", () => {
+    const gap = (v: number) => each(k => (k === 1 ? v : 0))
+    const checkRow = (v: number): Statement => ({ ...bs, rows: [bs.rows[0], { ...bs.rows[1], values: gap(v) }] })
+    const view = (v: number) => ({ igaap: { ...set('igaap', { bs: gap(v), cash: zero }), statements: [checkRow(v)] }, indas: sets.indas })
+    const red = () => screen.getByRole('row', { name: /Check/ }).querySelector('th')!.className.includes('text-destructive')
+    const { rerender } = render(<StatementsView sets={view(0.007)} tab="bs" />)
+    expect(screen.getByRole('status').textContent).toMatch(/Balances in every year/)
+    expect(red()).toBe(false)
+    expect(cells(/Check/)[1]).toBe('0.01') // shown (above the display nil), yet within tolerance
+    rerender(<StatementsView sets={view(0.02)} tab="bs" />)
+    expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY28/)
+    expect(red()).toBe(true)
+    rerender(<StatementsView sets={view(NaN)} tab="bs" />)
+    expect(screen.getByRole('status').textContent).toMatch(/Out of balance in FY28/)
+    expect(red()).toBe(true)
+    expect(cells(/Check/)[1]).toBe('')
   })
 
   it('a failing check row shows in the destructive colour', () => {
