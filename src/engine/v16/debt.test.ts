@@ -124,4 +124,12 @@ describe('v16 debt: sample targets (B §8)', () => {
     expect(r.principal.every((v) => v === 0) && r.repayment.every((v) => v === 0)).toBe(true)
     expectClose(r.closing[r.closing.length - 1], r.base, 1e-6, 'closing')
   })
+
+  it('a grid with a non-finite concession end returns at once (DB r60 chain is bounded)', () => {
+    const i = inputsFor('sample'), c = runConstruction(i, g, opsFor('sample'))
+    for (const concessionEnd of [Infinity, NaN]) {
+      const r = runDebt(i, { ...g, concessionEnd }, c)
+      expect(r.months.some((m) => m.phase === 'repayment')).toBe(false)
+    }
+  })
 })

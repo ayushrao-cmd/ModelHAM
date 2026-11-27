@@ -48,8 +48,11 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
   })
 
   // DB r60: EDATE chain from K12 every K13/'Fin Set'!B49 = 6 months while ≤ N18 (no B-Q14 swap of the last date).
+  // Bounded: K12 > construction end, so at most 2 × operation years + 1 dates fit before EOMONTH(N12) (a non-finite
+  // concession end gives none).
   const db: Day[] = []
-  for (let d = g.firstAnnuity; d <= eomonth(g.concessionEnd); d = addMonths(d, 6)) db.push(d)
+  for (let n = 0, d = g.firstAnnuity; n <= 2 * i.deal.operateYears && d <= eomonth(g.concessionEnd); n++, d = addMonths(d, 6))
+    db.push(d)
   const rep = i.capital.repayment
   const principal = g.annuities.map((_, n) => (rep[n] ?? 0) * c.debt) // DB r67 = r65 × 'COP-MOF'!D75
   // DB!U12 = SUMIF(annuity no., '1. IO'!K3, r60); K3 (25) generalised to the schedule's length, clamped to the last
