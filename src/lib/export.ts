@@ -6,7 +6,8 @@ import type { Scenario } from '../state/store'
 
 export type Cell = string | number
 
-const cell = (v: Cell) => (typeof v === 'number' ? String(Number(v.toFixed(6))) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+// A non-finite number (NaN = a blank statement cell) is an empty cell, never "NaN".
+const cell = (v: Cell) => (typeof v === 'number' ? (Number.isFinite(v) ? String(Number(v.toFixed(6))) : '') :/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 export const toCsv = (header: string[], rows: Cell[][]) => [header, ...rows].map(r => r.map(cell).join(',')).join('\n')
 
 /** The shape importScenario accepts back; `empty` lists the values not filled in yet. */

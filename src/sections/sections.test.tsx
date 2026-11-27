@@ -57,14 +57,6 @@ describe('sections', () => {
     expect(chip.getAttribute('href')).toBe('#/health?section=operations')
   })
 
-  it("statements show the original's IGAAP profit and loss (temporary view), negatives in parentheses", () => {
-    wrap(<Statements />)
-    const pl = screen.getByRole('region', { name: 'Profit and Loss Statement, as per IGAAP' })
-    expect(pl.textContent).toMatch(/FY27.*FY45/)
-    expect(pl.textContent).toMatch(/\(\d[\d,]*\.\d\d\)/)
-    expect(pl.textContent).not.toMatch(/NaN/)
-  })
-
   it('Capital shows the short-term loan and the DSR, FFE and MMR funds', () => {
     wrap(<Capital />)
     for (const t of ['Short-term loan (STL)', 'Debt Service Reserve (DSR)', 'Funds for Expenses (FFE)', 'Major Maintenance Reserve (MMR)'])

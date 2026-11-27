@@ -2,63 +2,75 @@ import { useId, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Day } from '../../engine/dates'
+import type { Row, Statement } from '../../engine/v16/types'
 import { type Cell, toCsv } from '../../lib/export'
 import { fmt } from '../../lib/format'
 
-// ponytail: the plan's shared shapes, declared here until src/engine/v16/types.ts exports them; swap this block for
-// `export type { Row, Statement, StatementSet } from '../../engine/v16/types'` then (structurally identical).
-export interface Row { id: string; label: string; values: number[]; total: number
-  kind: 'header' | 'line' | 'subtotal' | 'total' | 'check'; children?: Row[]; formula?: string; source?: string }
-export interface Statement { key: 'pl' | 'bs' | 'cf' | 'dscr' | 'irr'; title: string; rows: Row[] }
-export interface StatementSet { standard: 'igaap' | 'indas'; years: Day[]; statements: Statement[]
-  checks: { bs: number[]; cash: number[] } }
+export type { Row, Statement, StatementSet } from '../../engine/v16/types'
 
-const MAX_DEPTH = 3 // children nest at most three levels below a statement line
-const NIL = 0.005 // ₹ Cr; below this a value displays as ₹0.00, so it reads as a dash
-/** Accounting style: negatives in parentheses, nil as a dash (as the existing StatementTable). */
-const acct = (v: number) => (Math.abs(v) < NIL ? '–' : v < 0 ? `(${fmt.num(-v)})` : fmt.num(v))
-/** V16 numbering: "pl.A.1" -> "A.1". */
-const number = (st: Statement, id: string) => id.replace(new RegExp(`^${st.key}[.:_/-]`), '')
+const MAX_DEPTH = 3 // children nest at most three levels below a statement line (Row contract); screen and CSV alike
+/** ₹ Cr. Below this an amount shows as ₹0.00, so as a dash; the check rows and banners use the same tie. */
+export const TIE = 0.005
 
-/** The statement as CSV, every child row included and indented by depth, whatever is expanded on screen. */
-export function statementCsv(st: Statement, years: Day[]): string {
-  const out: Cell[][] = []
-  const walk = (rows: Row[], depth: number) => {
-    for (const r of rows) {
-      out.push([number(st, r.id), '  '.repeat(depth) + r.label, depth, ...r.values, r.total])
-      if (r.children) walk(r.children, depth + 1)
-    }
+/** Accounting style: negatives in parentheses, nil as a dash. */
+export const acct = (v: number) => (Math.abs(v) < TIE ? '–' : v < 0 ? `(${fmt.num(-v)})` : fmt.num(v))
+/** One cell by the row's unit; NaN (V16 blank) is an empty cell. */
+export function cellText(v: number, unit: Row['unit']): string {
+  if (Number.isNaN(v)) return ''
+  if (unit === 'money') return acct(v)
+  if (v === 0) return '–'
+  if (unit === 'ratio') return fmt.x(v)
+  if (unit === 'pct') return fmt.pct(v)
+  if (unit === 'count') return fmt.num(v, 0)
+  return fmt.date(v)
+}
+
+/** Rows in display order with their depth, descending into children (to MAX_DEPTH) where `open(row)`. */
+function flatten(rows: Row[], open: (r: Row) => boolean, depth = 0, out: { row: Row; depth: number }[] = []) {
+  for (const row of rows) {
+    out.push({ row, depth })
+    if (row.children?.length && depth < MAX_DEPTH && open(row)) flatten(row.children, open, depth + 1, out)
   }
-  walk(st.rows, 0)
+  return out
+}
+const holds = (r: Row, id: string): boolean => !!r.children?.some(c => c.id === id || holds(c, id))
+const failing = (r: Row) => r.values.some(v => !(Math.abs(v) < TIE))
+
+/** The statement as CSV, every row the screen can show (to MAX_DEPTH) indented by depth, whatever is expanded. */
+export function statementCsv(st: Statement, years: Day[]): string {
+  const out: Cell[][] = flatten(st.rows, () => true).map(({ row: r, depth }) =>
+    [r.num ?? '', '  '.repeat(depth) + r.label, depth, ...r.values, r.total])
   return toCsv(['No.', 'Line', 'Depth', ...years.map(fmt.fy), 'Total'], out)
 }
 
+// Opaque backgrounds on every cell (the sticky label sits over scrolled cells); the selection tint is layered on top.
+const PICKED = 'bg-card [background-image:linear-gradient(hsl(var(--primary)/0.08),hsl(var(--primary)/0.08))]'
+const HOVER = 'bg-card group-hover:bg-muted'
+const FOCUS = 'rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
 /**
  * One statement: sticky numbered labels, a column per FY plus Total, scrolling sideways inside its own region.
- * A line with children has a chevron button that expands them inline; selecting any line shows its formula and
- * source in the side panel.
+ * A line with children has a chevron button that expands them inline; the label button selects the line, and the
+ * side panel shows its formula and source. Escape clears the selection.
  */
 export function StatementTable({ statement: st, years }: { statement: Statement; years: Day[] }) {
   const id = useId()
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
-  const [selected, setSelected] = useState<Row | null>(null)
-  const toggle = (r: Row) => setOpen(s => { const n = new Set(s); if (!n.delete(r.id)) n.add(r.id); return n })
-
-  const lines: { row: Row; depth: number }[] = []
-  const walk = (rows: Row[], depth: number) => {
-    for (const row of rows) {
-      lines.push({ row, depth })
-      if (row.children?.length && depth < MAX_DEPTH && open.has(row.id)) walk(row.children, depth + 1)
-    }
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const toggle = (r: Row) => {
+    setOpen(s => { const n = new Set(s); if (!n.delete(r.id)) n.add(r.id); return n })
+    if (open.has(r.id) && selectedId && holds(r, selectedId)) setSelectedId(null) // collapsing hides the selection
   }
-  walk(st.rows, 0)
+  const lines = flatten(st.rows, r => open.has(r.id))
+  const selected = lines.find(l => l.row.id === selectedId)?.row ?? null
 
   return (
-    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]"
+      onKeyDown={e => { if (e.key === 'Escape' && selectedId) setSelectedId(null) }}>
       <div className="min-w-0">
         <h2 id={id} className="text-sm font-medium">{st.title}</h2>
         <p className="mb-2 mt-0.5 text-xs text-muted-foreground">₹ Cr, financial years ending 31 March</p>
-        <div role="region" aria-labelledby={id} tabIndex={0} className="overflow-x-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <div role="region" aria-labelledby={id} tabIndex={0} className={cn('overflow-x-auto', FOCUS)}>
           <table className="w-full border-separate border-spacing-0 text-[13px] tabular-nums">
             <thead>
               <tr>
@@ -75,32 +87,40 @@ export function StatementTable({ statement: st, years }: { statement: Statement;
                 const strong = r.kind === 'subtotal' || r.kind === 'total'
                 const parent = !!r.children?.length && depth < MAX_DEPTH
                 const expanded = open.has(r.id)
+                const picked = selectedId === r.id
+                const bg = picked ? PICKED : HOVER
                 const rule = cn(strong && depth === 0 && 'border-t border-foreground/25',
                   r.kind === 'total' && depth === 0 && 'border-b-[3px] border-double border-b-foreground/40',
-                  r.kind === 'check' && (r.values.some(v => Math.abs(v) >= NIL) ? 'text-destructive' : 'text-muted-foreground'),
+                  r.kind === 'check' && (failing(r) ? 'text-destructive' : 'text-muted-foreground'),
                   depth > 0 && 'text-muted-foreground')
-                const picked = selected?.id === r.id
                 const label = <>
-                  <span className="mr-2 inline-block min-w-[2.25rem] shrink-0 text-xs font-normal text-muted-foreground">{number(st, r.id)}</span>{' '}
+                  <span className="mr-2 inline-block min-w-[2.25rem] shrink-0 text-xs font-normal text-muted-foreground">{r.num ?? ''}</span>{' '}
                   <span>{r.label}</span>
                 </>
                 return (
-                  <tr key={r.id} className={cn('hover:[&>*]:bg-muted', (strong || header) && 'font-semibold')}>
+                  <tr key={r.id} className={cn('group', (strong || header) && 'font-semibold')}>
                     <th scope="row" style={{ paddingLeft: `${depth * 1.25}rem` }}
-                      className={cn('sticky left-0 min-w-[10rem] max-w-[18rem] bg-card pr-3 text-left leading-5 sm:min-w-[17rem]',
-                        header ? 'pb-1 pt-4 text-xs' : 'py-1', strong || header ? 'font-semibold' : 'font-normal', rule,
+                      className={cn('sticky left-0 min-w-[10rem] max-w-[18rem] pr-3 text-left leading-5 sm:min-w-[17rem]',
+                        header ? 'pb-1 pt-4 text-xs' : 'py-1', strong || header ? 'font-semibold' : 'font-normal', rule, bg,
                         picked && 'shadow-[inset_3px_0_0_hsl(var(--primary))]')}>
-                      {header ? <span className="flex">{label}</span> : (
-                        <button type="button" aria-expanded={parent ? expanded : undefined} onClick={() => { if (parent) toggle(r); setSelected(r) }}
-                          className="flex w-full items-start rounded-sm py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          <ChevronRight aria-hidden="true" className={cn('mr-1 mt-0.5 size-4 shrink-0 transition-transform', !parent && 'invisible', expanded && 'rotate-90')} />
-                          {label}
-                        </button>
-                      )}
+                      <span className="flex items-start">
+                        {parent ? (
+                          <button type="button" aria-expanded={expanded} aria-label={`Breakdown of ${r.label}`} onClick={() => toggle(r)}
+                            className={cn('mr-1 mt-0.5 shrink-0 text-muted-foreground hover:text-foreground', FOCUS)}>
+                            <ChevronRight aria-hidden="true" className={cn('size-4 motion-safe:transition-transform', expanded && 'rotate-90')} />
+                          </button>
+                        ) : <span aria-hidden="true" className="mr-1 size-4 shrink-0" />}
+                        {header ? <span className="flex py-0.5">{label}</span> : (
+                          <button type="button" aria-pressed={picked} onClick={() => setSelectedId(picked ? null : r.id)}
+                            className={cn('flex min-w-0 flex-1 items-start py-0.5 text-left', FOCUS)}>
+                            {label}
+                          </button>
+                        )}
+                      </span>
                     </th>
                     {[...r.values, r.total].map((v, k) => (
-                      <td key={k} className={cn('whitespace-nowrap px-3 py-1.5 text-right last:pr-1', k === r.values.length && 'border-l', rule, picked && 'bg-primary/[0.06]')}>
-                        {header ? '' : acct(v)}
+                      <td key={k} className={cn('whitespace-nowrap px-3 py-1.5 text-right last:pr-1', k === r.values.length && 'border-l', rule, bg)}>
+                        {cellText(v, r.unit)}
                       </td>
                     ))}
                   </tr>
@@ -110,9 +130,9 @@ export function StatementTable({ statement: st, years }: { statement: Statement;
           </table>
         </div>
       </div>
-      <aside aria-label="Line detail" aria-live="polite" className="h-fit rounded-md border bg-muted/40 p-4 text-[13px] leading-5 lg:sticky lg:top-4">
+      <aside aria-label="Line detail" className="h-fit rounded-md border bg-muted/40 p-4 text-[13px] leading-5 lg:sticky lg:top-4">
         {selected ? <>
-          <p className="text-xs text-muted-foreground">{number(st, selected.id)}</p>
+          {selected.num && <p className="text-xs text-muted-foreground">{selected.num}</p>}
           <h3 className="font-medium">{selected.label}</h3>
           <dl className="mt-3 space-y-3">
             <div><dt className="text-xs text-muted-foreground">How it is calculated</dt><dd>{selected.formula ?? 'No formula recorded for this line.'}</dd></div>

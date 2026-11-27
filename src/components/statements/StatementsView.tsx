@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { copy } from '../../lib/export'
 import { fmt } from '../../lib/format'
 import { Segmented } from '../../sections/SectionLayout'
-import { type Statement, type StatementSet, StatementTable, statementCsv } from './StatementTable'
+import { type Statement, type StatementSet, StatementTable, statementCsv, TIE } from './StatementTable'
 
 export type Standard = StatementSet['standard']
 export type StatementTab = Statement['key']
@@ -15,7 +15,6 @@ const STANDARDS: Record<Standard, string> = { igaap: 'IGAAP', indas: 'IndAS' }
 const TABS: Record<StatementTab, string> = { pl: 'P&L', bs: 'Balance Sheet', cf: 'Cash Flow', dscr: 'DSCR', irr: 'IRR' }
 const has = <K extends string>(o: Record<K, string>, v: string | null | undefined): v is K =>
   v != null && Object.prototype.hasOwnProperty.call(o, v) // Object.hasOwn needs ES2022 lib
-const TIE = 0.01 // ₹ Cr, as the Health statement checks
 
 /** One-line result of a statement identity (as in sections/Statements). */
 function Banner({ pass, children }: { pass: boolean; children: ReactNode }) {
@@ -29,14 +28,17 @@ function Banner({ pass, children }: { pass: boolean; children: ReactNode }) {
   )
 }
 
-/** The balance-sheet and cash checks; the other statements carry no identity of their own. */
+/** The balance-sheet check (liabilities − assets) and the cash check (1 where cash < 0), per FY; the other statements
+ *  carry no identity of their own. A NaN or missing year fails. */
 function Check({ set, tab }: { set: StatementSet; tab: StatementTab }) {
   if (tab !== 'bs' && tab !== 'cf') return null
   const gaps = tab === 'bs' ? set.checks.bs : set.checks.cash
-  const k = gaps.findIndex(g => Math.abs(g) > TIE)
-  if (k < 0) return <Banner pass>{tab === 'bs' ? 'Balances in every year.' : 'Reconciles in every year.'}</Banner>
-  const at = `in ${fmt.fy(set.years[k])} by ${fmt.cr(gaps[k])}`
-  return <Banner pass={false}>{tab === 'bs' ? `Out of balance ${at}.` : `Does not reconcile ${at}.`}</Banner>
+  const k = set.years.findIndex((_, n) => !(Math.abs(gaps[n]) < TIE))
+  if (k < 0) return <Banner pass>{tab === 'bs' ? 'Balances in every year.' : 'Cash is non-negative in every year.'}</Banner>
+  const fy = fmt.fy(set.years[k]), g = gaps[k]
+  if (tab === 'cf') return <Banner pass={false}>Cash is negative in {fy}.</Banner>
+  const by = Number.isFinite(g) ? ` by ${g < 0 ? `(${fmt.cr(-g)})` : fmt.cr(g)}` : ''
+  return <Banner pass={false}>Out of balance in {fy}{by}.</Banner>
 }
 
 /**

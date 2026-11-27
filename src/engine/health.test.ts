@@ -153,6 +153,15 @@ describe('input checks', () => {
 })
 
 describe('model checks that can fail', () => {
+  it('manual phasing shorter than the build warns, naming the counts; the sample\'s partial 37th month does not', () => {
+    const ok = find(runChecks(R), 'manual-phasing-length')
+    expect(ok).toMatchObject({ pass: true, severity: 'warning', section: 'phasing', fieldId: 'build.manualPhasing' })
+    expect(ok.message).toContain('36 entries for the 37 build months')
+    const long = find(checks(setAt(D, 'deal.buildDays', 1460)), 'manual-phasing-length')
+    expect(long.pass).toBe(false)
+    expect(long.message).toMatch(/49 months.*36 entries.*months 37 to 49 get no EPC/)
+    expect(find(checks(setAt(setAt(D, 'deal.buildDays', 1460), 'build.phasing', 'equated')), 'manual-phasing-length').pass).toBe(true)
+  })
   it('financing tie-up: threshold ₹1,154.84 Cr passes; bid 2,600 with AE 4,000 fails at ₹1,560.00 Cr', () => {
     expect(find(runChecks(R), 'financing-tieup').message).toContain('₹1,154.84 Cr')
     const c = find(checks(setAt(setAt(D, 'deal.bidPrice', 2600), 'deal.authorityEstimate', 4000)), 'financing-tieup')

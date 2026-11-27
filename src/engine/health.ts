@@ -3,7 +3,7 @@
 import { FIELDS } from '../fields'
 import { fmt } from '../lib/format'
 import { getAt } from '../lib/path'
-import { addMonths, fyEnd, isIsoDate, toDay } from './dates'
+import { addMonths, fyEnd, isIsoDate, toDay, toIso } from './dates'
 import type { ModelResult } from './model'
 import type { FieldDef, Inputs, SectionId } from './types'
 import { epcPhasing } from './v16/construction'
@@ -186,6 +186,17 @@ export function runChecks(r: ModelResult): Check[] {
     build.length ? `The build runs ${build.length} months, ${fmt.date(g.appointed)} to ${fmt.date(g.constructionEnd)}.`
       : `There are no build months: Build Days is ${fmt.num(i.deal.buildDays, 0)}, so construction never runs. Build-period checks are skipped.`,
     'deal.buildDays'))
+
+  // Manual phasing is by month index (quirk A-Q1): build months past the last entry get no EPC. A build starting
+  // mid-month spans one extra, partial calendar month (the sample: 36 entries, 37 months), which is allowed.
+  const entries = i.build.manualPhasing.length, first = build.length ? g.periods[build[0]] : undefined
+  const firstPartial = !!first && first.days < Number(toIso(first.end).slice(8, 10))
+  const short = i.build.phasing === 'manual' && build.length > entries + (firstPartial ? 1 : 0)
+  out.push(check('manual-phasing-length', 'Manual EPC phasing covers the build', 'phasing', 'warning', !short,
+    i.build.phasing !== 'manual' ? 'Manual EPC phasing is not in use.'
+      : short ? `The build runs ${build.length} months but manual EPC phasing has ${entries} entries: as the original, months ${entries + 1} to ${build.length} get no EPC.`
+      : `Manual EPC phasing has ${entries} entries for the ${build.length} build months.`,
+    'build.manualPhasing'))
 
   // Build milestones, at the month containing each milestone day. Physical = EPC phasing (the original's progress),
   // financial = EPC spend share; funding = Construction Support + GST, equity and debt drawn, against total cost.
