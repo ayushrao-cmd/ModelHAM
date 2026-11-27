@@ -103,17 +103,21 @@ function CheckRow({ c }: { c: Check }) {
   )
 }
 
+/** `#/health?section=notes`: the method notes, the original workbook's quirks the model reproduces. */
+export const NOTES = 'notes'
+
 export function Health() {
-  const { checks, score, missing } = useModel()
+  const { checks: all, score, missing } = useModel()
   const { param } = useRoute()
+  const checks = all.filter(c => c.group !== 'notes'), methodNotes = all.filter(c => c.group === 'notes')
   const withChecks = SECTIONS.filter(s => checks.some(c => c.section === s.id))
   const fromHash = param('section')
-  const routeSection = withChecks.some(s => s.id === fromHash) ? fromHash! : 'all'
+  const routeSection = withChecks.some(s => s.id === fromHash) || (fromHash === NOTES && methodNotes.length) ? fromHash! : 'all'
   const [section, setSection] = useState(routeSection)
   useEffect(() => setSection(routeSection), [routeSection]) // a later deep link wins
   // Any navigation re-reads the filter, so the plain section link (no ?section=) shows all sections again.
   useEffect(() => {
-    const sync = () => { const s = hashParam(window.location.hash, 'section'); setSection(SECTIONS.some(x => x.id === s) ? s! : 'all') }
+    const sync = () => { const s = hashParam(window.location.hash, 'section'); setSection(SECTIONS.some(x => x.id === s) || s === NOTES ? s! : 'all') }
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [])
@@ -125,7 +129,8 @@ export function Health() {
     history.replaceState(null, '', v === 'all' ? '#/health' : `#/health?section=${v}`)
   }
 
-  const inSection = checks.filter(c => section === 'all' || c.section === section)
+  const inSection = section === NOTES ? [] : checks.filter(c => section === 'all' || c.section === section)
+  const showNotes = methodNotes.length > 0 && (section === 'all' || section === NOTES) && (filter === 'all' || filter === 'info')
   const count = (f: Filter) => inSection.filter(c => matches(c, f)).length
   // Failing first (errors, warnings, notes), then passing; stable within each, so FIELDS order holds.
   const shown = inSection.filter(c => matches(c, filter)).sort((a, b) => Number(a.pass) - Number(b.pass) || RANK[a.severity] - RANK[b.severity])
@@ -166,11 +171,12 @@ export function Health() {
           <SelectContent>
             <SelectItem value="all">All sections</SelectItem>
             {withChecks.map(s => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+            {methodNotes.length > 0 && <SelectItem value={NOTES}>Method notes</SelectItem>}
           </SelectContent>
         </Select>
       </div>
 
-      {shown.length ? withChecks.map(s => {
+      {shown.length || showNotes ? withChecks.map(s => {
         const mine = shown.filter(c => c.section === s.id)
         if (!mine.length) return null
         return (
@@ -187,6 +193,20 @@ export function Health() {
         <p role="status" className="rounded-lg border border-dashed px-5 py-8 text-center text-sm text-muted-foreground">
           No checks match these filters.
         </p>
+      )}
+      {showNotes && (
+        <section id="method-notes" aria-label="Method notes">
+          <h2 className="mb-1 flex items-baseline gap-2 text-[15px] font-semibold">
+            Method notes<span className="text-[13px] font-normal tabular-nums text-muted-foreground">{methodNotes.length}</span>
+          </h2>
+          <p className="mb-2 max-w-3xl text-[13px] leading-5 text-muted-foreground">
+            The numbers follow the original workbook's method, quirks included. Each note is one the model reproduces, or a
+            fixed cell of the original it generalises, with the consistent alternative where it matters. Not counted as checks.
+          </p>
+          <Card className="overflow-hidden shadow-card">
+            <ul className="divide-y">{methodNotes.map(c => <CheckRow key={c.id} c={c} />)}</ul>
+          </Card>
+        </section>
       )}
     </div>
   )

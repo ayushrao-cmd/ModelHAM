@@ -67,8 +67,7 @@ export function derivedCosts(i: Inputs, g: Grid): { financeLegal: number; patrol
 /** Physical progress = EPC fixed phasing per period ('EPC Phasing' r40 by 'Fin Set'!B30). */
 export function epcPhasing(i: Inputs, g: Grid): number[] {
   const b = i.build, days = i.deal.buildDays
-  // 'EPC Phasing' r37 Schedule-G: linear in days inside each milestone segment. ponytail: V16 has no S-curve; the
-  // old engine's 'sCurve' option maps to V16's only other curve.
+  // 'EPC Phasing' r37 Schedule-G ('scheduleG'): linear in days inside each milestone segment.
   const schedG = (t: number) => {
     let d0 = 0, p0 = 0
     for (const m of i.milestones) {

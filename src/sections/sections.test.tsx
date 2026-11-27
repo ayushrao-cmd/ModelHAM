@@ -57,41 +57,34 @@ describe('sections', () => {
     expect(chip.getAttribute('href')).toBe('#/health?section=operations')
   })
 
-  it('statements open on the tab named in the URL and keep the tab in the URL when switched', () => {
-    window.location.hash = '#/statements?tab=bs'
+  it("statements show the original's IGAAP profit and loss (temporary view), negatives in parentheses", () => {
     wrap(<Statements />)
-    expect(screen.getByRole('tab', { name: 'Balance Sheet' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByText(/^Balance sheet balances at every FY end/)).toBeTruthy()
-    expect(screen.getByRole('region', { name: 'Balance sheet' }).textContent).toMatch(/FY27.*COD/)
-    const cf = screen.getByRole('tab', { name: 'Cash Flow' })
-    fireEvent.mouseDown(cf) // Radix tabs activate on mousedown
-    expect(cf.getAttribute('aria-selected')).toBe('true')
-    expect(window.location.hash).toBe('#/statements?tab=cf')
-    expect(screen.getByText(/^Closing cash equals balance-sheet cash/)).toBeTruthy()
+    const pl = screen.getByRole('region', { name: 'Profit and Loss Statement, as per IGAAP' })
+    expect(pl.textContent).toMatch(/FY27.*FY45/)
+    expect(pl.textContent).toMatch(/\(\d[\d,]*\.\d\d\)/)
+    expect(pl.textContent).not.toMatch(/NaN/)
   })
 
-  it('a section link without ?tab= returns statements to the Income Statement', () => {
-    window.location.hash = '#/statements'
-    wrap(<Statements />)
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Cash Flow' }))
-    expect(window.location.hash).toBe('#/statements?tab=cf')
-    act(() => { window.location.hash = '#/statements'; window.dispatchEvent(new HashChangeEvent('hashchange')) })
-    expect(screen.getByRole('tab', { name: 'Income Statement' }).getAttribute('aria-selected')).toBe('true')
+  it('Capital shows the short-term loan and the DSR, FFE and MMR funds', () => {
+    wrap(<Capital />)
+    for (const t of ['Short-term loan (STL)', 'Debt Service Reserve (DSR)', 'Funds for Expenses (FFE)', 'Major Maintenance Reserve (MMR)'])
+      expect(screen.getByRole('heading', { name: t }), t).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Short-term loan (STL)' }).parentElement!.textContent).toMatch(/₹225\.00 Cr.*Peak balance ₹196\.88 Cr/)
+    expect(screen.getByLabelText('Senior debt and fund balances at each financial year end')).toBeTruthy()
   })
 
-  it('statement line groups are row groups with their heading', () => {
-    window.location.hash = '#/statements?tab=bs'
-    wrap(<Statements />)
-    const groups = screen.getAllByRole('rowgroup').filter(g => g.tagName === 'TBODY')
-    expect(groups.length).toBe(3)
-    expect(screen.getByRole('rowheader', { name: 'Liabilities' }).getAttribute('scope')).toBe('rowgroup')
+  it("Build shows the original's project cost, with patrol rental and finance & legal from build days", () => {
+    wrap(<Build />)
+    expect(stat('Total project cost')).toBe('₹2,465.69 Cr')
+    expect(screen.getByRole('rowheader', { name: 'Finance & legal (from build days)' }).parentElement!.textContent).toContain('4.97')
+    expect(screen.queryByLabelText('Patrol Vehicles (Rental)')).toBeNull() // hidden: the engine derives it
+    expect(screen.getByLabelText('Patrol Rental (per month)')).toBeTruthy()
   })
 
-  it('statements show negatives in parentheses', () => {
-    wrap(<Statements />)
-    const is = screen.getByRole('region', { name: 'Income statement' })
-    expect(is.textContent).toMatch(/\(\d[\d,]*\.\d\d\)/)
-    expect(is.textContent).not.toMatch(/-\d/)
+  it('Phasing offers the Schedule G option and the manual phasing list', () => {
+    wrap(<Phasing />)
+    expect(screen.getByText('Manual EPC Phasing')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Monthly construction schedule' }).textContent).toContain('(after COD)')
   })
 
   it.each([['Phasing', Phasing], ['Statements', Statements]])('%s sits behind the results gate in a blank project', (_, View) => {

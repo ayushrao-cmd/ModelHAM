@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
-import { ArrowRight, ListChecks } from 'lucide-react'
+import { ArrowRight, CircleAlert, ListChecks } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { go, useRoute } from '../app/router'
 import { SECTIONS } from '../app/sections'
+import type { Check } from '../engine/health'
+import { fieldById } from '../fields'
 import type { Missing } from '../state/projects'
 import { useModel } from '../state/useModel'
 
@@ -23,15 +25,45 @@ export function FillProgress({ missing, className }: { missing: Missing; classNa
   )
 }
 
+/** A complete scenario the model cannot run on (an invalid date): what is wrong, with a jump to the field. */
+function Blocked({ checks }: { checks: Check[] }) {
+  return (
+    <Card role="alert" className="min-w-0 p-5 shadow-card">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive">
+          <CircleAlert className="size-[18px]" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold leading-6">The model can't run on these inputs</h2>
+          <ul className="mt-1 space-y-1">
+            {checks.map(c => (
+              <li key={c.id} className="text-[13px] leading-5 text-muted-foreground">
+                {c.message}{' '}
+                {c.fieldId && (
+                  <button type="button" onClick={() => go(fieldById(c.fieldId!)?.section ?? c.section, c.fieldId)}
+                    className="font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    Go to {fieldById(c.fieldId)?.label ?? 'field'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 /**
  * Results only for a complete scenario. While fields are empty: a card naming what is left, grouped by section
  * (the current section first), each a jump to the field. `quiet` renders nothing instead of the card.
  */
 export function ResultsGate({ children, quiet }: { children: ReactNode; quiet?: boolean }) {
-  const { missing } = useModel()
+  const { missing, blocked } = useModel()
   const { section } = useRoute()
-  if (!missing.paths.length) return <>{children}</>
+  if (!missing.paths.length && !blocked.length) return <>{children}</>
   if (quiet) return null
+  if (!missing.paths.length) return <Blocked checks={blocked} />
   const groups = SECTIONS.map(s => ({ s, fields: missing.byField.filter(f => f.section === s.id) })).filter(g => g.fields.length)
     .sort((a, b) => Number(b.s.id === section) - Number(a.s.id === section))
   return (

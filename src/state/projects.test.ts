@@ -31,12 +31,14 @@ describe('projects', () => {
     const sc = act(m)
     expect(sc.empty).toEqual(BLANK_EMPTY)
     for (const p of ['deal.bidPrice', 'deal.projectName', 'deal.bidDate', 'capital.repayment.3', 'milestones.0.day',
-      'operations.resurfacingYears.1', 'income.bankRates.4', 'indexation.wpi', 'build.epcFixed']) expect(sc.empty).toContain(p)
+      'operations.resurfacingYears.1', 'income.bankRates.4', 'build.manualPhasing.0', 'build.epcFixed']) expect(sc.empty).toContain(p)
     for (const p of sc.empty) {
       const v = getAt(sc.inputs, p)
       expect(v === 0 || v === '', p).toBe(true)
     }
-    for (const p of ['income.spread', 'income.installments.0', 'support.tranches.0.progress', 'tax.baseRate', 'deal.pavement', 'deal.operateYears'])
+    // hidden inputs the engine no longer reads are never required
+    for (const p of ['income.spread', 'income.installments.0', 'support.tranches.0.progress', 'tax.baseRate', 'deal.pavement', 'deal.operateYears',
+      'indexation.wpi', 'indexation.cpi', 'build.patrolRental', 'build.financeLegal'])
       expect(sc.empty).not.toContain(p)
     expect(sc.inputs.income.installments).toEqual(DEFAULT_INPUTS.income.installments)
     expect(sc.inputs.build.gstWorks).toBe(0.18)
@@ -148,6 +150,41 @@ describe('projects', () => {
     expect(s.scenarios[0].empty).toEqual([])
   })
 
+  it('migrates v3 saves: blank empty ranges decode with the v3 index, hidden fields drop out, S-curve becomes Schedule G', async () => {
+    const { BLANK_EMPTY, BLANK_EMPTY_V3 } = await import('./projects')
+    const was = ['deal.bidPrice', 'build.patrolRental', 'build.contingency', 'indexation.wpi', 'operations.routine', 'build.spvManpower']
+    const v3 = was.map(p => BLANK_EMPTY_V3.indexOf(p))
+    expect(v3.every(n => n >= 0)).toBe(true)
+    expect(BLANK_EMPTY_V3.length - BLANK_EMPTY.length).toBe(4) // patrol rental, build finance & legal, WPI, CPI
+    const inputs = { ...DEFAULT_INPUTS, build: { ...DEFAULT_INPUTS.build, phasing: 'sCurve' } }
+    cookies.set(KEY, JSON.stringify({ state: { projectId: 'b', projects: [
+      { id: 'b', template: 'blank', activeId: 's', baseId: 's', compareId: null, createdAt: 1,
+        scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: v3.join(',') }] },
+      { id: 'p', template: 'sample', activeId: 't', baseId: 't', compareId: null, createdAt: 1,
+        scenarios: [{ id: 't', name: 'Base case', updatedAt: 1, inputs: { build: { phasing: 'sCurve' } }, empty: '' }] },
+    ] }, version: 3 }))
+    const m = await fresh()
+    expect(act(m).empty).toEqual(['deal.bidPrice', 'build.contingency', 'operations.routine', 'build.spvManpower'])
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+    m.useStore.getState().setProject('p')
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+    expect(act(m).inputs.build.manualPhasing).toEqual(DEFAULT_INPUTS.build.manualPhasing)
+    // and an exported scenario from before the rename imports as Schedule G
+    expect(m.useStore.getState().importScenario(JSON.stringify({ name: 'Old', inputs }))).toEqual({ ok: true })
+    expect(act(m).inputs.build.phasing).toBe('scheduleG')
+  })
+
+  it('a fresh blank project does not run the engine and has the new policy fields pre-filled', async () => {
+    const m = await fresh()
+    m.useStore.getState().createProject('blank')
+    const { resultFor } = await import('./useModel')
+    expect(resultFor(act(m))).toBeNull()
+    const i = act(m).inputs
+    expect([i.stl.pctOfBid, i.funds.fdRate, i.funds.mmrShare, i.funds.mmrYears, i.csr.on, i.tax.depLifeYears, i.indexation.pim])
+      .toEqual([0.1, 0.055, 0.2, 5, true, 15, 0.04])
+    expect(act(m).empty).toContain('build.manualPhasing.0')
+  })
+
   it('on rehydrate drops unknown empty paths, and a blank leaf that is missing or wrong-typed becomes empty', async () => {
     const inputs = structuredClone(DEFAULT_INPUTS) as unknown as { deal: Record<string, unknown> }
     delete inputs.deal.authorityEstimate // missing
@@ -178,12 +215,12 @@ describe('projects', () => {
     const m = await fresh()
     for (let k = 0; k < 10; k++) m.useStore.getState().createProject('blank')
     const saved = cookies.get(KEY)!
-    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-117')
+    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-113')
     const { encodeCookie } = await import('../lib/cookies')
     expect(encodeCookie(saved).length).toBeLessThan(4096)
     const b = await fresh()
     expect(b.useStore.getState().projects).toHaveLength(11)
-    expect(act(b).empty).toHaveLength(118)
+    expect(act(b).empty).toHaveLength(114)
   })
 
   it('warns once, suggesting Export, when the saved state grows past about 12 KB', async () => {

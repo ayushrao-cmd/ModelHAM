@@ -9,7 +9,7 @@ export interface Inputs {
   build: { epcFixed: number; gstWorks: number; gstServices: number; ieFeePctOfBid: number; adminPctOfEpc: number;
            fundRaisingPctOfDebt: number; financeLegal: number; contingency: number; preBid: number; preBidMiscPct: number;
            spvFormationPctOfShareCapital: number; patrolCapital: number; patrolRental: number;
-           perfSecurityPctOfBid: number; perfSecurityCommissionPa: number; phasing: 'manual'|'equated'|'sCurve';
+           perfSecurityPctOfBid: number; perfSecurityCommissionPa: number; phasing: 'manual'|'equated'|'scheduleG';
            /** V16 manual EPC phasing, share per construction month (36 values; month 37 gets 0). */
            manualPhasing: number[]; spvManpower: number;
            /** V16 derives these from build days: patrol rental = rate x 12 x buildDays/365; finance & legal = one-off +
@@ -37,4 +37,6 @@ export interface FieldDef { id: string; label: string; section: SectionId;
   /** Pre-filled in a blank project: an HAM concession standard (MCA) or a statutory/policy value. Unset = project data, starts empty. */
   prefill?: 'standard' | 'policy'
   /** Display right after this field id in its group (FIELDS order itself is pinned). */
-  after?: string }
+  after?: string
+  /** No longer read by the engine: not shown, validated or required (kept in FIELDS so saved indices stay put). */
+  hidden?: boolean }

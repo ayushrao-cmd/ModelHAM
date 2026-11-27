@@ -19,23 +19,24 @@ const pp = (d: number) => signed(d, `${fmt.num(Math.abs(d) * 100)} pp`)
 const times = (d: number) => signed(d, fmt.x(Math.abs(d)))
 const crore = (d: number) => signed(d, fmt.cr(Math.abs(d)))
 
-const dscrs = (r: ModelResult) => r.ops.flatMap(p => (p.dscr == null ? [] : [p.dscr]))
+const dscrs = (r: ModelResult) => r.cash.dscr.flatMap(v => (v == null ? [] : [v]))
+const cumulative = (xs: number[]) => { let s = 0; return xs.map(v => (s += v)) }
 
 /** The headline metrics, shared by Overview tiles and the Scenarios comparison. */
 export const KPIS: { key: string; label: string; get(r: ModelResult): number | null; format(n: number | null): string;
   formatDelta(d: number): string; good: 'up' | 'down'; trend(r: ModelResult): number[]; trendLabel: string }[] = [
   { key: 'equityIrr', label: 'Equity IRR', get: r => r.kpis.equityIrr, format: n => fmt.pct(n), formatDelta: pp, good: 'up',
-    trend: r => r.ops.map(p => p.equityCash), trendLabel: 'equity cash per period' },
+    trend: r => r.cash.annual.equityPost, trendLabel: 'equity cash per financial year (IRR on half-yearly dates)' },
   { key: 'projectIrrPre', label: 'Project IRR, pre-tax', get: r => r.kpis.projectIrrPre, format: n => fmt.pct(n), formatDelta: pp, good: 'up',
-    trend: r => r.ops.map(p => p.cfads), trendLabel: 'cash flow available for debt service per period' },
+    trend: r => r.cash.projectFlows.pre, trendLabel: 'pre-tax project cash per financial year' },
   { key: 'projectIrrPost', label: 'Project IRR, post-tax', get: r => r.kpis.projectIrrPost, format: n => fmt.pct(n), formatDelta: pp, good: 'up',
-    trend: r => r.ops.map(p => p.cfads), trendLabel: 'cash flow available for debt service per period' },
+    trend: r => r.cash.projectFlows.post, trendLabel: 'post-tax project cash per financial year' },
   { key: 'dscrMin', label: 'Min DSCR', get: r => r.kpis.dscrMin, format: fmt.x, formatDelta: times, good: 'up',
-    trend: dscrs, trendLabel: 'DSCR per period' },
+    trend: dscrs, trendLabel: 'DSCR per financial year' },
   { key: 'dscrAvg', label: 'Avg DSCR', get: r => r.kpis.dscrAvg, format: fmt.x, formatDelta: times, good: 'up',
-    trend: dscrs, trendLabel: 'DSCR per period' },
+    trend: dscrs, trendLabel: 'DSCR per financial year' },
   { key: 'totalProjectCost', label: 'Total project cost', get: r => r.kpis.totalProjectCost, format: fmt.cr, formatDelta: crore, good: 'down',
-    trend: r => r.build.months.map(m => m.cumCost), trendLabel: 'cumulative build cost by month' },
+    trend: r => cumulative(r.construction.months.map(m => m.tpc)), trendLabel: 'cumulative project cost by month' },
 ]
 
 /** Active minus base; undefined when either has no value (e.g. no IRR). */

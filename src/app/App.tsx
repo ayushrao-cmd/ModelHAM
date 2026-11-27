@@ -17,6 +17,7 @@ import { Returns } from '../sections/Returns'
 import { Scenarios } from '../sections/Scenarios'
 import { Statements } from '../sections/Statements'
 import { useRoute } from './router'
+import { MethodNotice } from './MethodNotice'
 import { Brand, Sidebar, SidebarNav } from './Sidebar'
 import { ThemeToggle, Topbar } from './Topbar'
 
@@ -75,6 +76,7 @@ export default function App() {
         <div className="flex min-h-dvh min-w-0 flex-col lg:pl-60">
           <Topbar onMenu={() => setMenuOpen(true)} />
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none sm:px-6 sm:py-8 lg:px-8">
+            <MethodNotice />
             <View key={section} />
           </main>
         </div>

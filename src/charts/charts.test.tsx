@@ -11,7 +11,7 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 describe('chart components', () => {
   it('render a labelled figure', () => {
     render(<><DscrChart result={runModel(i)} /><SourcesUsesChart result={runModel(i)} /></>)
-    expect(screen.getByLabelText('Debt service coverage ratio (DSCR)')).toBeTruthy()
+    expect(screen.getByLabelText('Debt service coverage ratio (DSCR), by financial year')).toBeTruthy()
     expect(screen.getByLabelText('Sources and uses of funds')).toBeTruthy()
   })
   it('tornado shows a No data panel when empty or null', () => {

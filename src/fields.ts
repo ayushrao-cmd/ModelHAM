@@ -27,6 +27,9 @@ const infl = f('operations', 'Inflation')
 const tax = f('operations', 'Tax')
 const tgt = f('returns', 'Targets')
 
+// Hidden (`hidden: true`): inputs the original-method engine does not read. Patrol rental and build finance & legal are
+// derived from build days (their rates are the fields below), the expense-fund period follows the first payment lag,
+// the original has no support payment lag, and its price index is the PIM rate rather than a WPI/CPI blend.
 export const FIELDS: FieldDef[] = [
   project('deal.projectName', 'Project Name', 'text', 'Display name of the project.'),
   project('deal.authorityName', 'Authority Name', 'text', 'Name of the awarding authority.'),
@@ -50,17 +53,17 @@ export const FIELDS: FieldDef[] = [
   soft('build.ieFeePctOfBid', 'Independent Engineer Fee (% of Bid)', 'percent', 'Independent Engineer fee during build as a share of Bid Price.', { min: 0, max: 0.05, step: 0.0005, prefill: 'policy' }),
   soft('build.adminPctOfEpc', 'SPV Admin (% of EPC)', 'percent', 'SPV administration cost as a share of EPC.', { min: 0, max: 0.1, step: 0.0025, prefill: 'policy' }),
   soft('build.fundRaisingPctOfDebt', 'Fund-raising Fee (% of Debt)', 'percent', 'Upfront fee on debt raised.', { min: 0, max: 0.05, step: 0.0005, prefill: 'policy' }),
-  soft('build.financeLegal', 'Finance & Legal (Build)', 'money', 'Lump-sum finance and legal cost during build, ₹ Cr.', { min: 0, step: 0.1 }),
+  soft('build.financeLegal', 'Finance & Legal (Build)', 'money', 'Lump-sum finance and legal cost during build, ₹ Cr.', { min: 0, step: 0.1, hidden: true }),
   hard('build.contingency', 'Contingency', 'money', 'Lump-sum contingency in ₹ Cr.', { min: 0, step: 0.5 }),
   soft('build.preBid', 'Pre-bid Expenses', 'money', 'Pre-bid expenses in ₹ Cr.', { min: 0, step: 0.01 }),
   soft('build.preBidMiscPct', 'Pre-bid Miscellaneous Allowance', 'percent', 'Miscellaneous allowance on top of pre-bid expenses (100% doubles them).', { min: 0, max: 5, step: 0.1, prefill: 'policy' }),
   soft('build.spvFormationPctOfShareCapital', 'SPV Formation (% of Share Capital)', 'percent', 'SPV formation cost as a share of share capital.', { min: 0, max: 0.05, step: 0.0005, prefill: 'policy' }),
   soft('build.patrolCapital', 'Patrol Vehicles (Capital)', 'money', 'Capital cost of patrol vehicles in ₹ Cr.', { min: 0, step: 0.01 }),
-  soft('build.patrolRental', 'Patrol Vehicles (Rental)', 'money', 'Rental cost of patrol vehicles during build in ₹ Cr.', { min: 0, step: 0.01 }),
+  soft('build.patrolRental', 'Patrol Vehicles (Rental)', 'money', 'Rental cost of patrol vehicles during build in ₹ Cr.', { min: 0, step: 0.01, hidden: true }),
   soft('build.perfSecurityPctOfBid', 'Performance Security (% of Bid)', 'percent', 'Performance Security as a share of Bid Price.', { min: 0, max: 0.2, step: 0.005, prefill: 'standard' }),
   soft('build.perfSecurityCommissionPa', 'Performance Security Commission (p.a.)', 'percent', 'Annual bank commission on Performance Security.', { min: 0, max: 0.05, step: 0.0005, prefill: 'standard' }),
   phasing('build.phasing', 'EPC Phasing', 'select', 'How EPC spend is spread over the build period.',
-    { options: [{ value: 'manual', label: 'Manual monthly %' }, { value: 'equated', label: 'Equated monthly' }, { value: 'sCurve', label: 'S-curve' }] }),
+    { options: [{ value: 'manual', label: 'Manual monthly %' }, { value: 'equated', label: 'Equated monthly' }, { value: 'scheduleG', label: 'Schedule G' }] }),
 
   struct('support.pctOfBid', 'Construction Support (% of Bid)', 'percent', 'Total Construction Support from the Authority as a share of Bid Price.', { min: 0, max: 0.6, step: 0.01, prefill: 'standard' }),
   struct('support.tranches', 'Support Tranches', 'trancheList', 'Physical progress at which each Construction Support tranche is paid, and its weight: Construction Support (% of Bid) is split across tranches in proportion to their weights.', { prefill: 'standard' }),
@@ -86,9 +89,9 @@ export const FIELDS: FieldDef[] = [
   om('income.omPreResurfacingFlexible', 'O&M Payment – Pre-resurfacing (Flexible)', 'percent', 'O&M payment rate in the year before resurfacing, flexible pavement.', { min: 0, max: 0.05, step: 0.0005, prefill: 'standard' }),
   om('income.omPreResurfacingPerpetual', 'O&M Payment – Pre-resurfacing (Perpetual)', 'percent', 'O&M payment rate in the year before resurfacing, perpetual pavement.', { min: 0, max: 0.05, step: 0.0005, prefill: 'standard' }),
 
-  idx('indexation.wpi', 'WPI Inflation', 'percent', 'Assumed annual wholesale price inflation.', { min: 0, max: 0.2, step: 0.005, key: true }),
-  idx('indexation.cpi', 'CPI Inflation', 'percent', 'Assumed annual consumer price inflation.', { min: 0, max: 0.2, step: 0.005, key: true }),
-  idx('indexation.wpiWeight', 'WPI Weight', 'percent', 'Weight of WPI in the Indexation Factor; CPI gets the rest.', { min: 0, max: 1, step: 0.05, prefill: 'standard' }),
+  idx('indexation.wpi', 'WPI Inflation', 'percent', 'Assumed annual wholesale price inflation.', { min: 0, max: 0.2, step: 0.005, key: true, hidden: true }),
+  idx('indexation.cpi', 'CPI Inflation', 'percent', 'Assumed annual consumer price inflation.', { min: 0, max: 0.2, step: 0.005, key: true, hidden: true }),
+  idx('indexation.wpiWeight', 'WPI Weight', 'percent', 'Weight of WPI in the Indexation Factor; CPI gets the rest.', { min: 0, max: 1, step: 0.05, prefill: 'standard', hidden: true }),
 
   run('operations.routine', 'Routine Maintenance', 'money', 'Annual routine maintenance in ₹ Cr at bid-date prices.', { min: 0, step: 0.1, key: true }),
   run('operations.electricity', 'Electricity', 'money', 'Annual electricity cost in ₹ Cr at bid-date prices.', { min: 0, step: 0.1 }),
@@ -110,11 +113,11 @@ export const FIELDS: FieldDef[] = [
   tax('tax.cess', 'Cess', 'percent', 'Health and education cess on tax and surcharge.', { min: 0, max: 0.2, step: 0.01, prefill: 'policy' }),
   tgt('targets.equityIrrHurdle', 'Equity IRR Hurdle', 'percent', 'Target equity return; used by the Solve Bid Price control and Health.', { min: 0, max: 0.5, step: 0.005, prefill: 'policy' }),
   // Appended, not inserted (FIELDS order is pinned); shown after Support Tranches via `after`.
-  struct('support.lagDays', 'Support Payment Lag', 'days', 'Days from the end of the month a tranche is earned to the month it is received (engineer certification and Authority release). A receipt that would fall after completion is taken in the last build month; capped at 90 days so build funding still balances.', { min: 0, max: 90, step: 5, prefill: 'policy', after: 'support.tranches' }),
+  struct('support.lagDays', 'Support Payment Lag', 'days', 'Days from the end of the month a tranche is earned to the month it is received (engineer certification and Authority release). A receipt that would fall after completion is taken in the last build month; capped at 90 days so build funding still balances.', { min: 0, max: 90, step: 5, prefill: 'policy', after: 'support.tranches', hidden: true }),
   // V16 inputs, appended (order pinned); shown next to their related field via `after`.
   struct('stl.pctOfBid', 'Short-term loan (% of bid)', 'percent', 'Short-term loan (STL) taken in two equal instalments early in the build, passed to the EPC contractor back to back, as a share of Bid Price.', { min: 0, max: 0.3, step: 0.01, prefill: 'policy', after: 'capital.shareCapitalPct' }),
   loan('funds.fdRate', 'Interest on Funds (FD Rate)', 'percent', 'Fixed-deposit rate earned on the expense, DSR and MMR funds.', { min: 0, max: 0.2, step: 0.0025, prefill: 'policy', after: 'capital.dscrWarn' }),
-  loan('funds.ffeDays', 'Funds for Expenses (days)', 'days', 'Days of operating expenses held in the Funds for Expenses account.', { min: 0, max: 365, step: 15, prefill: 'policy', after: 'funds.fdRate' }),
+  loan('funds.ffeDays', 'Funds for Expenses (days)', 'days', 'Days of operating expenses held in the Funds for Expenses account.', { min: 0, max: 365, step: 15, prefill: 'policy', after: 'funds.fdRate', hidden: true }),
   loan('funds.mmrShare', 'MMR Set-aside (share of Major Maintenance)', 'percent', 'Share of the next Major Maintenance cost set aside each year in the maintenance reserve.', { min: 0, max: 1, step: 0.05, prefill: 'policy', after: 'funds.ffeDays' }),
   loan('funds.mmrYears', 'MMR Set-aside Years', 'years', 'Number of years the maintenance reserve is built up before each Major Maintenance.', { min: 1, max: 10, step: 1, prefill: 'policy', after: 'funds.mmrShare' }),
   loan('funds.dsrInterestMonths', 'DSR Interest (months)', 'number', 'Months of interest held in the debt service reserve.', { min: 0, max: 12, step: 1, prefill: 'policy', after: 'funds.mmrYears' }),

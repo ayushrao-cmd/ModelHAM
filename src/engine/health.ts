@@ -1,18 +1,23 @@
 // Health: typed checks that can actually fail, explain themselves with numbers, and point at the field to fix (spec §9).
+// Model checks read the original-method (V16) result; V16's own statement checks are re-run on the IGAAP statements.
 import { FIELDS } from '../fields'
 import { fmt } from '../lib/format'
 import { getAt } from '../lib/path'
-import { addMonths, isIsoDate, toDay } from './dates'
+import { addMonths, fyEnd, isIsoDate, toDay } from './dates'
 import type { ModelResult } from './model'
-import { type Statements, buildStatements, row } from './statements'
 import type { FieldDef, Inputs, SectionId } from './types'
+import { epcPhasing } from './v16/construction'
+import { buildIgaap } from './v16/statements/igaap'
+import type { Loop, Row } from './v16/types'
 
 export type Severity = 'error'|'warning'|'info'
-export interface Check { id: string; title: string; section: SectionId; fieldId?: string; severity: Severity; pass: boolean; message: string }
+/** `group: 'notes'`: a method note (a reproduced quirk of the original), not a check; Health lists them apart. */
+export interface Check { id: string; title: string; section: SectionId; fieldId?: string; severity: Severity; pass: boolean
+  message: string; group?: 'notes' }
 
 const SUM_TOL = 1e-6 // schedules must total 100% to within float residue
 const MONEY_TOL = 0.005 // ₹ Cr; below this an amount displays as ₹0.00 Cr
-const RECON_TOL = 0.01 // ₹ Cr; the debt / Interest During Build fixed point converges to this
+const RECON_TOL = 0.01 // ₹ Cr; the funding fixed points converge to this
 const RATIO_TOL = 1e-9 // float residue on DSCR comparisons
 const IRR_TOL = 1e-6 // XIRR converges to about this
 export const DSCR_FLOOR = 1.0 // cash flow must at least cover debt service
@@ -22,7 +27,7 @@ const APS_SLAB2_PTS = 20 // second slab starts 20 points below
 const APS_RATE_1 = 0.001 // 0.1% of bid per point in the first slab
 const APS_RATE_2 = 0.002 // 0.2% of bid per point beyond the second slab
 const RESURFACING_GAP = 5 // second resurfacing must be more than 5 years after the first
-const PERIODS_PER_YEAR = 2 // half-yearly payments (matches operations)
+const PERIODS_PER_YEAR = 2 // half-yearly payments
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const check = (id: string, title: string, section: SectionId, severity: Severity, pass: boolean, message: string,
@@ -73,7 +78,7 @@ function fieldProblem(f: FieldDef, v: unknown, i: Inputs): string | null {
 }
 
 export function validateInputs(i: Inputs): Check[] {
-  const fields = FIELDS.filter(f => f.kind !== 'trancheList' && f.id !== 'operations.resurfacingYears').map(f => {
+  const fields = FIELDS.filter(f => !f.hidden && f.kind !== 'trancheList' && f.id !== 'operations.resurfacingYears').map(f => {
     const problem = fieldProblem(f, getAt(i, f.id), i)
     return check(`field:${f.id}`, f.label, f.section, 'error', !problem, problem ?? `${f.label} is valid.`, f.id)
   })
@@ -96,7 +101,7 @@ export function validateInputs(i: Inputs): Check[] {
     : `${tranches.length} tranches split Construction Support of ${fmt.pct(pctOfBid)} of bid by weight, in ascending progress.`
   const tranchesOk = (tranches.length > 0 || pctOfBid === 0) && badWeight < 0 && badProgress < 0
 
-  const mp = sum(i.build.manualPhasing), mpOk = i.build.phasing !== 'manual' || Math.abs(mp - 1) <= 1e-6
+  const mp = sum(i.build.manualPhasing), mpOk = i.build.phasing !== 'manual' || Math.abs(mp - 1) <= SUM_TOL
   const mpMsg = mpOk ? 'Manual EPC phasing totals 100%.' : `Manual EPC phasing sums to ${fmt.pct(mp)} (must be 100.00%).`
 
   const [r1, r2] = i.operations.resurfacingYears, Y = i.deal.operateYears
@@ -104,6 +109,12 @@ export function validateInputs(i: Inputs): Check[] {
   const resurfacingMsg = r2 <= r1 + RESURFACING_GAP ? `Second resurfacing (year ${r2}) must be more than ${RESURFACING_GAP} years after the first (year ${r1}).`
     : r2 >= Y ? `Second resurfacing (year ${r2}) must fall before the end of the ${Y}-year operations period.`
     : resurfacingOk ? `Resurfacing in years ${r1} and ${r2}.` : `Resurfacing years must be whole operating years (are ${r1}, ${r2}).`
+
+  // MMR: mmrShare of each major maintenance is set aside in each of mmrYears years, so the two must give 100%.
+  const { mmrShare, mmrYears } = i.funds, cover = mmrShare * mmrYears, coverOk = Math.abs(cover - 1) <= SUM_TOL
+  const coverMsg = `The maintenance reserve sets aside ${fmt.pct(mmrShare)} × ${fmt.num(mmrYears, 0)} years = ${fmt.pct(cover)} of each major maintenance`
+    + (coverOk ? '.' : cover < 1 ? ', so the reserve falls short and the rest is paid from cash.'
+      : ', so more than the cost is reserved and the excess stays in the fund.')
 
   const datesValid = isIsoDate(i.deal.bidDate) && isIsoDate(i.income.rateQuoteDate)
   const bid = toDay(i.deal.bidDate), quote = toDay(i.income.rateQuoteDate)
@@ -124,6 +135,7 @@ export function validateInputs(i: Inputs): Check[] {
     check('tranche-sum', 'Support tranches valid', 'capital', 'error', tranchesOk, trancheMsg, 'support.tranches'),
     check('manual-phasing-sum', 'Manual EPC phasing total', 'phasing', 'error', mpOk, mpMsg, 'build.manualPhasing'),
     check('resurfacing-order', 'Resurfacing years in order', 'operations', 'error', resurfacingOk, resurfacingMsg, 'operations.resurfacingYears'),
+    check('mmr-cover', 'Maintenance reserve covers each resurfacing', 'operations', 'warning', coverOk, coverMsg, 'funds.mmrShare'),
     check('dates-order', 'Rate quote on or before bid date', 'income', 'error', datesValid && quote <= bid,
       datesValid ? `Rate quote ${fmt.date(quote)} ${quote <= bid ? 'is on or before' : 'is after'} the bid date ${fmt.date(bid)}.`
         : 'Bid date and rate quote date must both be valid dates.', 'income.rateQuoteDate'),
@@ -136,47 +148,67 @@ export function validateInputs(i: Inputs): Check[] {
   ]
 }
 
+/** Checks that stop the engine from running at all (it throws on a date it cannot place): shown instead of results. */
+export function blockingChecks(i: Inputs): Check[] {
+  return validateInputs(i).filter(c => c.id === 'field:deal.bidDate' && !c.pass)
+}
+
+/** The engine threw on inputs that passed `blockingChecks`: an error check instead of a crash. */
+export const modelRunCheck = (e: unknown): Check => check('model-run', 'Model can run', 'deal', 'error', false,
+  `The model can't run on these inputs: ${e instanceof Error ? e.message : String(e)}. Check the dates and day counts.`, 'deal.daysToStart')
+
+const LOOPS: Record<keyof ModelResult['loops'], { title: string; what: string }> = {
+  construction: { title: 'Construction funding converged', what: 'Construction funding (debt, equity, interest during build and the interest DSR)' },
+  tax: { title: 'Tax and reserves converged', what: 'Tax, interest on funds and the DSR top-ups' },
+  csr: { title: 'CSR converged', what: 'CSR and profit after tax' },
+}
+
+/** Formats a method note's values: the DSCR note in ×, the others are IRRs. */
+const noteValue = (id: string, n: number) => (id === 'B-Q5' ? fmt.x(n) : fmt.pct(n))
+
 export function runChecks(r: ModelResult): Check[] {
-  const { inputs: i, timeline: t, build: b, ops, kpis: k } = r
+  const { inputs: i, grid: g, construction: c, cash, debt, opex, gst } = r
+  // A DSCR or IRR the inputs give no answer for is null (no debt service, no root); a non-finite one is treated the same.
+  const k = { ...r.kpis, dscrMin: Number.isFinite(r.kpis.dscrMin) ? r.kpis.dscrMin : null }
   const out = validateInputs(i)
+  const months = c.months
 
   // Financing tie-up: debt + equity ≥ min(90% × (AE − support share × bid), completion share × bid).
   const bid = i.deal.bidPrice
   const threshold = Math.min(TIEUP_SHARE * (i.deal.authorityEstimate - i.support.pctOfBid * bid), i.income.completionPctOfBid * bid)
-  const tied = b.debt + b.equity
+  const tied = c.debt + c.equity
   const tiedOk = tied >= threshold - RECON_TOL // debt and equity are exact only to the solver tolerance
   out.push(check('financing-tieup', 'Financing Tie-up Test', 'deal', 'error', tiedOk,
     `Debt + equity ${fmt.cr(tied)} ${tiedOk ? 'meets' : 'is below'} the tie-up threshold ${fmt.cr(threshold)}.`, 'deal.bidPrice'))
 
-  // An empty build grid (completion before start, or an unusable date) fails here; the milestone checks need months.
-  const months = b.months
-  out.push(check('build-period', 'Build period has months', 'deal', 'error', months.length > 0,
-    months.length ? `The build runs ${months.length} months, ${fmt.date(t.start)} to ${fmt.date(t.completion)}.`
+  const build = g.periods.flatMap((p, n) => (p.kind === 'construction' ? [n] : []))
+  out.push(check('build-period', 'Build period has months', 'deal', 'error', build.length > 0,
+    build.length ? `The build runs ${build.length} months, ${fmt.date(g.appointed)} to ${fmt.date(g.constructionEnd)}.`
       : `There are no build months: Build Days is ${fmt.num(i.deal.buildDays, 0)}, so construction never runs. Build-period checks are skipped.`,
     'deal.buildDays'))
 
-  // Build milestones, measured at the month containing each milestone day (the build grid is monthly).
-  const epcTotal = sum(months.map(m => m.epc))
-  let acc = 0
-  const financial = months.map(m => (acc += m.epc) / epcTotal) // financial progress = cumulative EPC spend share
-  if (months.length) i.milestones.forEach((ms, n) => {
-    const found = months.findIndex(m => m.day >= t.start + ms.day - 1)
-    const m = found < 0 ? months.length - 1 : found
-    const mo = months[m], phys = mo.cumPhysical, fin = financial[m]
-    const ok = phys >= ms.physical - SUM_TOL && fin >= ms.financial - SUM_TOL
+  // Build milestones, at the month containing each milestone day. Physical = EPC phasing (the original's progress),
+  // financial = EPC spend share; funding = Construction Support + GST, equity and debt drawn, against total cost.
+  const phys = epcPhasing(i, g), epc = months.map(m => m.epcFixed + m.epcVariable), epcTotal = sum(epc)
+  const funding = months.map(m => m.grant + m.grantGst + m.equityUpfront + m.equityDeferred + m.debtDraw)
+  const upTo = (xs: number[], n: number) => sum(xs.slice(0, n + 1))
+  if (build.length) i.milestones.forEach((ms, n) => {
+    const m = build.find(x => g.periods[x].end >= g.appointed + ms.day - 1) ?? build[build.length - 1]
+    const end = g.periods[m].end, p = upTo(phys, m), f = epcTotal > 0 ? upTo(epc, m) / epcTotal : 0
+    const ok = p >= ms.physical - SUM_TOL && f >= ms.financial - SUM_TOL
     out.push(check(`milestone-progress-${n + 1}`, `Build Milestone ${n + 1} progress`, 'phasing', 'error', ok,
-      `Day ${ms.day} (${fmt.date(mo.day)}): physical ${fmt.pct(phys)} vs required ${fmt.pct(ms.physical)}; financial ${fmt.pct(fin)} vs required ${fmt.pct(ms.financial)}.`,
+      `Day ${ms.day} (${fmt.date(end)}): physical ${fmt.pct(p)} vs required ${fmt.pct(ms.physical)}; financial ${fmt.pct(f)} vs required ${fmt.pct(ms.financial)}.`,
       'milestones'))
-    const excess = mo.cumFunding - mo.cumCost
+    const fund = upTo(funding, m), cost = upTo(months.map(x => x.tpc), m), excess = fund - cost
     out.push(check(`milestone-funding-${n + 1}`, `Build Milestone ${n + 1} funding vs cost`, 'capital', 'warning', excess <= MONEY_TOL,
-      excess <= MONEY_TOL ? `By day ${ms.day}, funding ${fmt.cr(mo.cumFunding)} does not exceed cost ${fmt.cr(mo.cumCost)}.`
-        : `By day ${ms.day}, funding ${fmt.cr(mo.cumFunding)} exceeds cost ${fmt.cr(mo.cumCost)} by ${fmt.cr(excess)} (Construction Support received ahead of spend).`,
+      excess <= MONEY_TOL ? `By day ${ms.day}, funding ${fmt.cr(fund)} does not exceed cost ${fmt.cr(cost)}.`
+        : `By day ${ms.day}, funding ${fmt.cr(fund)} exceeds cost ${fmt.cr(cost)} by ${fmt.cr(excess)} (Construction Support received ahead of spend).`,
       'support.tranches'))
   })
 
-  // Coverage. Comparisons are written so NaN fails.
-  const worst = ops.find(p => p.dscr === k.dscrMin)
-  const when = worst ? ` (period ${worst.n}, ${fmt.date(worst.day)})` : ''
+  // Coverage, annual (FY) as the original. Null DSCR = no debt service in that year; comparisons are written so NaN fails.
+  const worstFy = cash.dscr.findIndex(v => v != null && v === k.dscrMin)
+  const when = worstFy >= 0 ? ` (${fmt.fy(g.fys[worstFy])})` : ''
   const floorOk = k.dscrMin == null || k.dscrMin >= DSCR_FLOOR - RATIO_TOL
   out.push(check('dscr-floor', `DSCR at least ${fmt.x(DSCR_FLOOR)}`, 'capital', 'error', floorOk,
     k.dscrMin == null ? 'No debt service, so no coverage test.'
@@ -190,52 +222,69 @@ export function runChecks(r: ModelResult): Check[] {
       : `Minimum DSCR ${fmt.x(k.dscrMin)}${when} is ${warnOk ? 'at or above' : 'below'} the warning level ${fmt.x(i.capital.dscrWarn)}.`,
     'capital.dscrWarn'))
 
-  const last = ops[ops.length - 1]
-  const left = last ? last.debtClosing : b.debt
+  const left = debt.closing[debt.closing.length - 1] ?? c.debt
   out.push(check('debt-repaid', 'Debt fully repaid', 'capital', 'error', Math.abs(left) <= MONEY_TOL,
-    Math.abs(left) <= MONEY_TOL ? `Debt is fully repaid by the final payment${last ? ` (${fmt.date(last.day)})` : ''}.`
-      : `${fmt.cr(left)} of debt is still outstanding after the final payment${last ? ` (${fmt.date(last.day)})` : ''}.`,
+    Math.abs(left) <= MONEY_TOL ? `Debt is fully repaid by the last repayment (${fmt.date(debt.repaymentEnd)}).`
+      : `${fmt.cr(left)} of debt is still outstanding at the end of ${fmt.fy(g.fys[g.fys.length - 1])}.`,
     'capital.repayment'))
 
-  // Money tolerance: the debt/equity split is exact only to the solver's ₹0.01 Cr (defaults sit at 3.0×).
-  const levOk = b.debt <= i.capital.maxLeverage * b.equity + RECON_TOL
+  const levOk = c.debt <= i.capital.maxLeverage * c.equity + RECON_TOL
   out.push(check('leverage', 'Leverage within limit', 'capital', 'warning', levOk,
     `Debt / equity ${fmt.x(k.leverage)} is ${levOk ? 'within' : 'above'} the ${fmt.x(i.capital.maxLeverage)} limit.`,
     'capital.equityPct'))
 
-  // Sources = Uses, reconciled independently: reported totals, the monthly draws behind debt and equity, and
-  // the monthly cash (funding vs cost by completion). Negative debt/equity means Construction Support exceeds costs.
-  const sources = b.support + b.supportGst + b.debt + b.equity
-  // Draws are never negative, so the sign test is on the funding need itself.
-  const need = b.totalUses - b.support - b.supportGst
-  const negative = need < 0
-  const negMsg = `Construction Support incl. GST ${fmt.cr(b.support + b.supportGst)} exceeds build costs ${fmt.cr(b.totalUses)} by ${fmt.cr(-need)}: there is nothing for debt and equity to fund.`
-  const end = months[months.length - 1]
-  const recon: [string, number, number][] = [
-    ['Monthly equity draws', sum(months.map(m => m.equityDraw)), b.equity],
-    ['Monthly debt draws', sum(months.map(m => m.debtDraw)), b.debt],
-    ['Funding by completion', end?.cumFunding ?? 0, end?.cumCost ?? 0],
-    ['Sources', sources, b.totalUses],
+  // Sources = Uses: Construction Support with GST, equity and debt against the project cost (to the 1st annuity), and
+  // the monthly draws behind the reported debt and equity. The STL passes straight through to the EPC contractor.
+  const support = sum(months.map(m => m.grant)), supportGst = sum(months.map(m => m.grantGst))
+  const sources = support + supportGst + c.debt + c.equity
+  const need = c.tpc - support - supportGst, negative = need < 0
+  const negMsg = `Construction Support incl. GST ${fmt.cr(support + supportGst)} exceeds project cost ${fmt.cr(c.tpc)} by ${fmt.cr(-need)}: there is nothing for debt and equity to fund.`
+  const recon: [string, number, number, string][] = [
+    ['Monthly equity draws', sum(months.map(m => m.equityUpfront + m.equityDeferred)), c.equity, 'reported equity'],
+    ['Monthly debt draws', sum(months.map(m => m.debtDraw)), c.debt, 'reported debt'],
+    ['Funding to the first annuity', sum(funding), c.tpc, 'project cost'],
+    ['Sources', sources, c.tpc, 'uses'],
   ]
-  const against = ['reported equity', 'reported debt', 'cost by completion', 'uses']
-  const off = recon.findIndex(([, a, c]) => !(Math.abs(a - c) <= RECON_TOL))
+  const off = recon.findIndex(([, a, b]) => !(Math.abs(a - b) <= RECON_TOL))
   out.push(check('sources-uses', 'Sources = Uses', 'capital', 'error', off < 0 && !negative,
     negative ? negMsg : off >= 0
-      ? `${recon[off][0]} ${fmt.cr(recon[off][1])} differ from ${against[off]} ${fmt.cr(recon[off][2])} by ${fmt.cr(recon[off][1] - recon[off][2])}.`
-      : `Sources ${fmt.cr(sources)} equal uses ${fmt.cr(b.totalUses)}; monthly equity and debt draws and build cash reconcile.`,
+      ? `${recon[off][0]} ${fmt.cr(recon[off][1])} differ from ${recon[off][3]} ${fmt.cr(recon[off][2])} by ${fmt.cr(recon[off][1] - recon[off][2])}.`
+      : `Sources ${fmt.cr(sources)} equal uses ${fmt.cr(c.tpc)}; monthly equity and debt draws reconcile.`,
     'deal.bidPrice'))
-  const badMonth = months.find(m => !(m.equityDraw >= -MONEY_TOL && m.debtDraw >= -MONEY_TOL && m.debtBalance >= -MONEY_TOL))
-  out.push(check('build-cash', 'Build cash never negative', 'capital', 'error', !negative && !badMonth,
-    negative ? negMsg : badMonth ? `Negative build-period draw or balance in ${fmt.date(badMonth.day)}.` : 'Every build-period draw and debt balance is non-negative.',
+  const badMonth = months.findIndex(m => !(m.equityUpfront + m.equityDeferred >= -MONEY_TOL && m.debtDraw >= -MONEY_TOL && m.debtBalance >= -MONEY_TOL))
+  out.push(check('build-cash', 'Build draws never negative', 'capital', 'error', !negative && badMonth < 0,
+    negative ? negMsg : badMonth >= 0 ? `Negative draw or debt balance in ${fmt.date(g.periods[badMonth].end)}.`
+      : 'Every build-period draw and debt balance is non-negative.',
     'deal.bidPrice'))
 
   out.push(check('om-margin', 'O&M margin', 'operations', 'warning', k.omMargin >= 0,
     k.omMargin >= 0 ? `O&M payments exceed operating costs by ${fmt.cr(k.omMargin)} over the concession.`
       : `O&M payments fall short of operating costs by ${fmt.cr(-k.omMargin)} over the concession.`, 'operations.routine'))
 
-  out.push(check('solver-converged', 'Interest During Build solver converged', 'build', 'error', b.converged,
-    b.converged ? `Debt and Interest During Build converged in ${b.iterations} iterations.`
-      : `Debt and Interest During Build did not converge after ${b.iterations} iterations; results are approximate.`))
+  // Major maintenance reserve edge cases (generalised from the original's fixed columns): a resurfacing soon after
+  // COD has fewer set-aside years; a third consecutive year of major maintenance is not reserved for.
+  const mm = opex.majorMaintenance, kCod = g.fys.indexOf(fyEnd(g.cod)), Y = i.funds.mmrYears
+  const cycles = mm.flatMap((v, n) => (n >= kCod && kCod >= 0 && v > 0 && !(n > kCod && mm[n - 1] > 0) ? [n] : []))
+  const clipped = cycles.map(n => {
+    const end = mm[n + 1] > 0 ? n + 1 : n
+    return { n, years: end - Math.max(kCod, end - Y + 1) + 1 }
+  }).find(x => x.years < Y)
+  out.push(check('mmr-window', 'Maintenance reserve built up in time', 'operations', 'warning', !clipped,
+    clipped ? `Major maintenance in ${fmt.fy(g.fys[clipped.n])} comes ${clipped.years} year${clipped.years === 1 ? '' : 's'} after COD, so the reserve gets ${clipped.years} of its ${Y} set-aside years and falls short.`
+      : cycles.length ? `Every major maintenance gets its ${Y} set-aside years.` : 'No major maintenance in the concession.',
+    'operations.resurfacingYears'))
+  const third = cycles.find(n => mm[n + 1] > 0 && mm[n + 2] > 0)
+  out.push(check('mmr-third-year', 'Major maintenance reserved for', 'operations', 'warning', third === undefined,
+    third === undefined ? 'Each major maintenance spans at most two financial years, all reserved for.'
+      : `Major maintenance runs a third consecutive year (${fmt.fy(g.fys[third + 2])}); the reserve sets nothing aside for it.`,
+    'operations.resurfacingYears'))
+
+  for (const key of Object.keys(LOOPS) as (keyof typeof LOOPS)[]) {
+    const l: Loop = r.loops[key], { title, what } = LOOPS[key]
+    out.push(check(`loop-${key}`, title, key === 'construction' ? 'build' : 'returns', 'error', l.converged,
+      l.converged ? `${what} converged in ${l.iterations} iteration${l.iterations === 1 ? '' : 's'}.`
+        : `${what} did not converge after ${l.iterations} iterations; results are approximate.`))
+  }
 
   const irrs = [k.equityIrr, k.projectIrrPre, k.projectIrrPost]
   out.push(check('irr-undefined', 'Returns computable', 'returns', 'error', irrs.every(x => x != null),
@@ -249,41 +298,65 @@ export function runChecks(r: ModelResult): Check[] {
       : `Equity IRR ${fmt.pct(k.equityIrr)} is ${hurdleOk ? 'at or above' : 'below'} the ${fmt.pct(hurdle)} hurdle.`,
     'targets.equityIrrHurdle'))
 
-  // GST credit is recovered from Completion Payments; a low bid can leave some unrecovered at concession end.
-  const recovered = sum(ops.map(p => p.gstRecovery)), gstLeft = b.netGstCredit - recovered
-  out.push(check('gst-recovered', 'GST credit recovered', 'income', 'warning', gstLeft <= MONEY_TOL,
-    gstLeft <= MONEY_TOL ? `All ${fmt.cr(b.netGstCredit)} of net GST credit is recovered from Completion Payments by the final payment.`
-      : `${fmt.cr(gstLeft)} of net GST credit is still unrecovered after the final payment (recovered ${fmt.cr(recovered)} of ${fmt.cr(b.netGstCredit)}); it stays a receivable at concession end.`,
+  // GST input credit not used against output GST by the concession end is written off to the P&L.
+  const writtenOff = sum(gst.writeOff)
+  out.push(check('gst-recovered', 'GST credit used', 'income', 'warning', writtenOff <= MONEY_TOL,
+    writtenOff <= MONEY_TOL ? 'All GST input credit is set off against output GST by the concession end.'
+      : `${fmt.cr(writtenOff)} of GST input credit is still unused at the concession end and is written off to profit and loss.`,
     'deal.bidPrice'))
 
-  out.push(...statementChecks(buildStatements(r)))
+  out.push(...statementChecks(r))
+  out.push(...r.notes.map((n): Check => {
+    const vals = [n.v16Value != null && `original ${noteValue(n.id, n.v16Value)}`,
+      n.consistentValue != null && `consistent ${noteValue(n.id, n.consistentValue)}`].filter(Boolean)
+    return { id: `note:${n.id}`, title: `Method note ${n.id}`, section: 'statements', severity: 'info', pass: true,
+      group: 'notes', message: `${n.text}${vals.length ? ` (${vals.join('; ')}.)` : ''}` }
+  }))
   return out
 }
 
-/** The statements' own identities, re-checked on the statements as built: balance sheet and cash reconciliation. */
-export function statementChecks(s: Statements): Check[] {
-  const { years } = s
-  const span = years.length ? `${fmt.fy(years[0])} to ${fmt.fy(years[years.length - 1])}` : ''
-  const test = (id: string, title: string, a: number[], c: number[], ok: string, bad: (gap: number, year: string) => string) => {
-    const gaps = years.map((_, k) => a[k] - c[k])
-    const k = gaps.findIndex(g => !(Math.abs(g) <= RECON_TOL))
-    const worst = Math.max(0, ...gaps.map(Math.abs))
-    return check(id, title, 'statements', 'error', k < 0,
-      !years.length ? 'No financial years to check.'
-        : k < 0 ? `${ok} at every FY end, ${span} (largest gap ${fmt.cr(worst)}).`
-        : bad(gaps[k], `${fmt.fy(years[k])} (${fmt.date(years[k])})`))
-  }
-  const v = (rows: Statements['bs'], key: string) => row(rows, key).values
+/** The original's own checks, re-run on the IGAAP statements as built: balance sheet, cash ≥ 0, cash, equity and debt
+ *  ties. A V16 quirk that breaks one of them is reproduced, and reported here as an error. */
+export function statementChecks(r: ModelResult): Check[] {
+  const s = buildIgaap(r), { fys } = r.grid, n = fys.length
+  const fy = (k: number) => `${fmt.fy(fys[k])} (${fmt.date(fys[k])})`
+  const span = n ? `${fmt.fy(fys[0])} to ${fmt.fy(fys[n - 1])}` : ''
+  const bsRow = (id: string) => (s.statements.find(x => x.key === 'bs')!.rows.find((x: Row) => x.id === id)?.values ?? [])
+  const firstGap = (gaps: number[]) => gaps.findIndex(v => !(Math.abs(v) <= RECON_TOL))
+  const c = r.construction, cash = r.cash, months = c.months, debt = r.debt
+  const last = (xs: number[]) => xs[xs.length - 1] ?? 0
+
+  const bs = firstGap(s.checks.bs)
+  const neg = s.checks.cash.findIndex(v => v !== 0)
+  const tie = firstGap(cash.closing.map((v, k) => v - (k ? cash.closing[k - 1] : 0) - cash.inflow[k] - cash.outflow[k]))
+  const equityBs = last(bsRow('bs.A.1')) + last(bsRow('bs.A.2')), equityDrawn = sum(months.map(m => m.equityShareCapital + m.equityUsl))
+  const equityOff = [equityBs - c.equity, equityDrawn - c.equity].findIndex(v => !(Math.abs(v) <= RECON_TOL))
+  const drawn = sum(months.map(m => m.debtDraw)), repaid = sum(debt.repayment)
+  const debtOff = [drawn - debt.base, repaid - debt.base].findIndex(v => !(Math.abs(v) <= RECON_TOL))
   return [
-    test('bs-balance', 'Balance sheet balances', v(s.bs, 'totalAssets'), v(s.bs, 'totalLiabilitiesEquity'), 'Balance sheet balances',
-      (g, y) => `Balance sheet does not balance at ${y}: assets exceed liabilities and equity by ${fmt.cr(g)}.`),
-    test('cf-reconcile', 'Cash flow reconciles to balance sheet', v(s.cf, 'closingCash'), v(s.bs, 'cash'), 'Closing cash equals balance-sheet cash',
-      (g, y) => `Cash flow closing cash differs from balance-sheet cash at ${y} by ${fmt.cr(g)}.`),
+    check('bs-balance', 'Balance sheet balances', 'statements', 'error', bs < 0,
+      bs < 0 ? `Total liabilities equal total assets at every FY end, ${span}.`
+        : `Balance sheet does not balance at ${fy(bs)}: total liabilities less total assets is ${fmt.cr(s.checks.bs[bs])}.`),
+    check('cash-nonnegative', 'Cash never negative', 'statements', 'error', neg < 0,
+      neg < 0 ? `Cash in bank is at least zero at every FY end, ${span}.`
+        : `Cash in bank is ${fmt.cr(cash.closing[neg])} at ${fy(neg)}: the year's applications exceed its sources.`),
+    check('cash-tie', 'Cash flow reconciles', 'statements', 'error', tie < 0,
+      tie < 0 ? `Closing cash = opening cash + inflows + outflows at every FY end, ${span}; it is the balance-sheet cash.`
+        : `Closing cash at ${fy(tie)} differs from opening cash plus the year's flows.`),
+    check('equity-tie', 'Equity ties', 'statements', 'error', equityOff < 0,
+      equityOff < 0 ? `Share capital and unsecured loan on the balance sheet (${fmt.cr(equityBs)}) equal the equity drawn in construction.`
+        : equityOff === 0 ? `Balance-sheet equity ${fmt.cr(equityBs)} differs from the equity raised ${fmt.cr(c.equity)}.`
+        : `Monthly equity draws ${fmt.cr(equityDrawn)} differ from the equity raised ${fmt.cr(c.equity)}.`),
+    check('debt-tie', 'Senior debt ties', 'statements', 'error', debtOff < 0,
+      debtOff < 0 ? `Senior debt drawn in construction (${fmt.cr(drawn)}) is the repayment base, and is repaid in full over the schedule.`
+        : debtOff === 0 ? `Senior debt drawn ${fmt.cr(drawn)} differs from the repayment base ${fmt.cr(debt.base)}.`
+        : `Repayments ${fmt.cr(repaid)} differ from the senior debt ${fmt.cr(debt.base)}.`),
   ]
 }
 
+/** Method notes are information, not checks: they don't count. */
 export function healthScore(checks: Check[]) {
-  const failed = checks.filter(c => !c.pass)
-  return { passed: checks.length - failed.length, total: checks.length,
+  const counted = checks.filter(c => c.group !== 'notes'), failed = counted.filter(c => !c.pass)
+  return { passed: counted.length - failed.length, total: counted.length,
     errors: failed.filter(c => c.severity === 'error').length, warnings: failed.filter(c => c.severity === 'warning').length }
 }
