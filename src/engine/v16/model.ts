@@ -23,9 +23,9 @@ const sum = (a: number[]) => a.reduce((s, v) => s + v, 0)
 const maxDiff = (a: number[], b: number[]) => a.reduce((m, v, k) => Math.max(m, Math.abs(v - (b[k] ?? 0))), 0)
 
 /** CSR, PAT and net worth from PBT before CSR and tax. CSR_t tests PAT and net worth of t−1, so each pass fixes one
- *  more FY; bounded by FY count + 1 passes. */
-function afterTax(i: Inputs, g: Grid, c: ConstructionResult, turnover: number[], pbt: number[], tax: number[]):
-  { profit: IgaapProfit; loop: Loop } {
+ *  more FY; bounded by FY count + 1 passes. Also the IndAS statements' CSR (`standard` 'indas', on IndAS figures). */
+export function afterTax(i: Inputs, g: Grid, c: ConstructionResult, turnover: number[], pbt: number[], tax: number[],
+  standard: 'igaap' | 'indas' = 'igaap'): { profit: IgaapProfit; loop: Loop } {
   const n = g.fys.length
   let s = 0
   const shareCapital = toFy(c.months.map((m) => m.equityShareCapital), g.periods.map((p) => p.end), g).map((v) => (s += v))
@@ -36,7 +36,7 @@ function afterTax(i: Inputs, g: Grid, c: ConstructionResult, turnover: number[],
     let reserves = 0
     pat = pbt.map((v, k) => v - amount[k] - tax[k])
     netWorth = pat.map((v, k) => shareCapital[k] + (reserves += v)) // r40 + r42 (r43..r46 are 0 in V16)
-    detail = csr(i, g, pbt, netWorth, turnover, pat, 'igaap')
+    detail = csr(i, g, pbt, netWorth, turnover, pat, standard)
     converged = maxDiff(detail.amount, amount) === 0
     amount = detail.amount
   }

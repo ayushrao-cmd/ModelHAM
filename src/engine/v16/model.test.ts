@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { row, rowRaw, inputsFor, kpis, expectSeries, expectClose, fromSerial } from './golden'
-import { runV16 } from './model'
+import { annualIrr, halfYearly, halfYearlyXirr } from './cash'
+import { afterTax, runV16 } from './model'
 
 const sum = (a: number[]) => a.reduce((s, v) => s + v, 0)
 const neg = (a: number[]) => a.map((v) => -v)
@@ -194,5 +195,24 @@ describe('v16 model: sample targets', () => {
 
   it('keeps the invalid-date contract: throws', () => {
     expect(() => runV16({ ...i, deal: { ...i.deal, bidDate: '2026-02-30' } })).toThrow()
+  })
+})
+
+describe('v16 model: exports the IndAS statements reuse', () => {
+  const r = runV16(inputsFor('sample'))
+
+  it('afterTax (IGAAP) reproduces the CSR loop result', () => {
+    const { profit } = afterTax(r.inputs, r.grid, r.construction, r.igaap.turnover, r.igaap.pbt, r.tax.tax)
+    expect(profit.csr).toEqual(r.igaap.csr)
+    expect(profit.pat).toEqual(r.igaap.pat)
+  })
+
+  it('annualIrr, halfYearly and halfYearlyXirr reproduce the cash IRRs', () => {
+    const c = r.cash, a = c.annual
+    expect(annualIrr(c.projectFlows.pre)).toBe(c.irr.projectPre)
+    const h = halfYearly(r.grid, r.construction, r.revenue, a.equityInflow, a.tax)
+    expect(h).toEqual(c.equityFlows)
+    expect(halfYearlyXirr(h, h.post)).toBe(c.irr.equityHalfYearly)
+    expect(halfYearlyXirr(h, h.pre)).toBe(c.irr.equityHalfYearlyPre)
   })
 })

@@ -63,8 +63,10 @@ const neg = (a: number[]) => a.map((v) => -v)
 /** CF transfer to/from a fund: opening + funded − closing (r112, r113, r115). */
 const transfer = (l: Ledger) => l.opening.map((o, k) => o + l.funded[k] - l.closing[k])
 
-/** Annual IRR (Excel IRR on FY columns): XIRR on 365-day steps is the same equation. */
-const irr = (v: number[]) => xirr(v.map((amount, k) => ({ day: 365 * k, amount })))
+/** Annual IRR (Excel IRR on FY columns): XIRR on 365-day steps is the same equation. Also the IndAS statements' IRRs
+ *  and financial-asset rate (Fin-INDAS D185..D188, D413). */
+export const annualIrr = (v: number[]) => xirr(v.map((amount, k) => ({ day: 365 * k, amount })))
+const irr = annualIrr
 
 /** Fin-IGAAP r124..r141: cash available for DSCR from PAT (B §9.4). Used inside the funds ↔ tax loop as well. */
 export function dscrRows(g: Grid, debt: DebtResult, funds: FundsResult, gst: GstResult, bookDep: number[],
@@ -145,10 +147,9 @@ export function runCash(g: Grid, x: CashInputs): CashResult {
   const equityPre = add(equityOutflow, taxPos, equityInflow), equityPost = add(equityOutflow, equityInflow)
 
   const equityFlows = halfYearly(g, c, rev, equityInflow, taxPos)
-  // r193: XIRR from the first column whose equity outflow rounds to non-zero.
-  const j = equityFlows.outflow.findIndex((v) => Math.round(v * 10 ** DIGITS) !== 0)
+  const j = xirrStart(equityFlows)
   const dated = (s: number[]) => s.slice(j).map((amount, k) => ({ day: equityFlows.dates[j + k], amount }))
-  const from = (s: number[]) => (j < 0 ? null : xirr(dated(s)))
+  const from = (s: number[]) => halfYearlyXirr(equityFlows, s)
   const annuityFys = new Set(rev.dates.map(fyEnd))
   const dropped = g.fys.map((f, k) => ({ day: f, amount: equityInflow[k] })).filter((x) => !annuityFys.has(x.day) && x.amount)
   return { lines: { ...sources, ...uses }, opening, inflow, outflow, closing, cfads, dscrRows: d, dscr, dscrAvg,
@@ -165,6 +166,15 @@ export function runCash(g: Grid, x: CashInputs): CashResult {
       projectPost: irr(add(projectFlows.post, dsrTransfer)) } }
 }
 
+/** r193 (IndAS r208): the first column whose equity outflow rounds to non-zero, −1 if none. */
+const xirrStart = (f: CashResult['equityFlows']) => f.outflow.findIndex((v) => Math.round(v * 10 ** DIGITS) !== 0)
+
+/** D194/D195 (IndAS D209/D210): XIRR of `s` (a series on `f.dates`) from the r193 start column; null if none. */
+export function halfYearlyXirr(f: CashResult['equityFlows'], s: number[]): number | null {
+  const j = xirrStart(f)
+  return j < 0 ? null : xirr(s.slice(j).map((amount, k) => ({ day: f.dates[j + k], amount })))
+}
+
 /** EOMONTH(d, 6) for a month end d. */
 const sixMonthsOn = (d: Day) => eomonth(addMonths(d + 1, 5))
 
@@ -173,7 +183,7 @@ const sixMonthsOn = (d: Day) => eomonth(addMonths(d + 1, 5))
  * then every 6 months, capped at N18 = EOMONTH(concession end). Equity outflows sit on the COP-MOF month ends (r9,
  * SUMIF r177); each FY's r164 / r159 is split equally over the annuity month ends in that FY (r185–r189).
  */
-function halfYearly(g: Grid, c: ConstructionResult, rev: RevenueResult, equityInflow: number[], tax: number[]):
+export function halfYearly(g: Grid, c: ConstructionResult, rev: RevenueResult, equityInflow: number[], tax: number[]):
   CashResult['equityFlows'] {
   const k18 = eomonth(g.firstAnnuity), n18 = eomonth(g.concessionEnd)
   const dates: Day[] = [g.bid, eomonth(g.bid)]
