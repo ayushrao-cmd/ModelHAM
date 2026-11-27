@@ -53,15 +53,18 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
   const rep = i.capital.repayment
   const principal = g.annuities.map((_, n) => (rep[n] ?? 0) * c.debt) // DB r67 = r65 × 'COP-MOF'!D75
   // DB!U12 = SUMIF(annuity no., '1. IO'!K3, r60); K3 (25) generalised to the schedule's length, clamped to the last
-  // annuity (V16 would get U12 = 0 and break) so the month loop below always ends.
-  const repaymentEnd = db[Math.min(rep.length, db.length) - 1]
+  // annuity (V16 would get U12 = 0 and break). No schedule or no annuity: U12 = K12 and no repayment months.
+  const last = Math.min(rep.length, db.length)
+  const repaymentEnd = last ? db[last - 1] : g.firstAnnuity
 
   // Rows 21–34: calendar months from K12 (that day included) to U12.
   // ponytail: r31 additions (COP-MOF draws in a period *starting* on the month start) are 0 unless the 1st annuity is
   // the 1st of a month (a 0-day post-COD period); not modelled.
   let open = months.length ? months[months.length - 1].closing : c.months[c.months.length - 1].debtBalance // D30 = C17
-  for (let s = g.firstAnnuity; ; ) {
-    const end = Math.min(eomonth(s), repaymentEnd), fy = fyEnd(end)
+  // Bounded: s strictly increases (end ≥ s) and the loop stops once past U12.
+  for (let s = g.firstAnnuity, end = s; last > 0 && s <= repaymentEnd; s = end + 1) {
+    end = Math.min(eomonth(s), repaymentEnd)
+    const fy = fyEnd(end)
     // r32: instalments whose annuity month end (DB r61) is this month's end.
     const repayment = db.reduce((a, d, n) => a + (eomonth(d) === eomonth(end) ? principal[n] ?? 0 : 0), 0)
     // r27 + r28: the CP rate only where a COP-MOF period ends on this month's end (a 1-day first month when K12 is a
@@ -73,8 +76,6 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
     months.push({ phase: 'repayment', start: s, end, days, rate, opening: open, addition: 0, repayment, closing,
       interest: (open + closing) / 2 * days / daysInFy(fy) * rate })
     open = closing
-    if (end >= repaymentEnd) break
-    s = end + 1
   }
 
   // Fin-IGAAP r218..r222: SUMIF of the monthly rows on FY(end); r218 starts at the COD opening and rolls forward.
@@ -86,6 +87,7 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
     addition[k] += m.addition; repayment[k] += m.repayment; interest[k] += m.interest
   }
   const k0 = at.get(fyEnd(g.cod)) ?? g.fys.length
+  // Period ends are strictly increasing (grid.ts: each period starts the day after the last ends), so one per key.
   const balanceAt = new Map(g.periods.map((p, j) => [p.end, c.months[j].debtBalance]))
   let bal = months[0]?.opening ?? 0
   g.fys.forEach((f, k) => {

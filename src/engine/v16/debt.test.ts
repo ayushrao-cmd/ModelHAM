@@ -113,4 +113,15 @@ describe('v16 debt: sample targets (B §8)', () => {
     expect(r.months[r.months.length - 1].end).toBe(r.repaymentEnd)
     expect(r.interest.every(Number.isFinite)).toBe(true)
   })
+
+  it('an empty repayment schedule returns at once: no repayment months, debt stays at the 1st-annuity balance', () => {
+    const i = inputsFor('sample'), c = runConstruction(i, g, opsFor('sample'))
+    const t = performance.now()
+    const r = runDebt({ ...i, capital: { ...i.capital, repayment: [] } }, g, c)
+    expect(performance.now() - t).toBeLessThan(200)
+    expect(r.months.some((m) => m.phase === 'repayment')).toBe(false)
+    expect(r.repaymentEnd).toBe(g.firstAnnuity)
+    expect(r.principal.every((v) => v === 0) && r.repayment.every((v) => v === 0)).toBe(true)
+    expectClose(r.closing[r.closing.length - 1], r.base, 1e-6, 'closing')
+  })
 })
