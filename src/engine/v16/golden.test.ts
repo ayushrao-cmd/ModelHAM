@@ -30,3 +30,18 @@ describe('golden sample', () => {
     expect(rowRaw('sample', 'Fin-IGAAP!63').values[0]).toBe(0)
   })
 })
+
+describe('differential goldens', () => {
+  const SETS = ['bid2400', 'epc105', 'build1460', 'equity30', 'rates50bp', 'equated']
+  it.each(SETS)('%s loads and its IGAAP balance sheet balances every FY', (set) => {
+    const g = golden(set)
+    expect(g.meta.set).toBe(set)
+    expect(Object.keys(g.meta.inputs).length).toBeGreaterThan(0)
+    const bs = rowRaw(set, 'Fin-IGAAP!63').values.filter((v): v is number => v !== null)
+    expect(bs.length).toBeGreaterThanOrEqual(19)
+    for (const v of bs) expect(Math.abs(v)).toBeLessThan(1e-6)
+  })
+  it('a higher bid lifts equity IRR', () => {
+    expect(kpis('bid2400').equityIrrHalfYearly!).toBeGreaterThan(kpis('sample').equityIrrHalfYearly!)
+  })
+})

@@ -1,17 +1,28 @@
 import sample from './golden/sample.json'
+import bid2400 from './golden/bid2400.json'
+import epc105 from './golden/epc105.json'
+import build1460 from './golden/build1460.json'
+import equity30 from './golden/equity30.json'
+import rates50bp from './golden/rates50bp.json'
+import equated from './golden/equated.json'
 
 export interface GoldenRow {
   label: string; total: number | null; values: (number | null)[]
   lead?: Record<string, number> // numeric cells left of the value columns, keyed by 1-based column
 }
+/** Differential sets (scripts/v16/run_differential.py): `inputs` are site Inputs paths (incl. V16-derived knock-ons,
+ *  see scripts/v16/io_map.json); `patches` are hard-code cells changed in the V16 copy (design §9). */
 export interface Golden {
-  meta: { set: string; inputs: Record<string, number | string>; extracted: string; v16Residual?: number }
+  meta: { set: string; inputs: Record<string, number | string>; extracted: string; v16Residual?: number
+    patches?: { cell: string; old: string; new: string; why: string }[] }
   cells: Record<string, GoldenRow>
   cols: Record<string, (string | null)[]>
   kpis: Record<string, number | null>
 }
 
-const sets: Record<string, Golden> = { sample: sample as unknown as Golden }
+const sets: Record<string, Golden> = Object.fromEntries(
+  Object.entries({ sample, bid2400, epc105, build1460, equity30, rates50bp, equated })
+    .map(([k, g]) => [k, g as unknown as Golden]))
 
 export const golden = (set: string): Golden => {
   const g = sets[set]
