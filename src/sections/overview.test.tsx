@@ -10,12 +10,19 @@ import { Overview } from './Overview'
 import { Returns } from './Returns'
 import { Scenarios } from './Scenarios'
 
+// Returns' sensitivity run, made to throw on demand.
+const sens = vi.hoisted(() => ({ fail: false }))
+vi.mock('../engine/sensitivity', async orig => {
+  const m = await orig<typeof import('../engine/sensitivity')>()
+  return { ...m, tornado: (...a: Parameters<typeof m.tornado>) => { if (sens.fail) throw new Error('boom'); return m.tornado(...a) } }
+})
+
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } // jsdom lacks it
 
 const wrap = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvider>)
 const activeInputs = () => { const s = useStore.getState(); return s.scenarios.find(x => x.id === s.activeId)!.inputs }
 
-beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.location.hash = '' })
+beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.location.hash = ''; sens.fail = false })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Overview', () => {
@@ -79,6 +86,19 @@ describe('Returns', () => {
     expect(container.querySelector('[aria-busy="true"] figure')).toBeTruthy()
     act(() => { vi.advanceTimersByTime(500) })
     expect(container.querySelector('[aria-busy="true"]')).toBeNull()
+  })
+
+  it('shows an error instead of hanging when the sensitivities fail', () => {
+    vi.useFakeTimers()
+    sens.fail = true
+    wrap(<Returns />)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.queryByText('Working out the sensitivities…')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toMatch(/couldn't work out the sensitivities/i)
+    sens.fail = false
+    act(() => useStore.getState().setInput('deal.bidPrice', 2300)) // a later edit tries again
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getByLabelText(/^Sensitivity: result for ±10% on each driver/)).toBeTruthy()
   })
 })
 

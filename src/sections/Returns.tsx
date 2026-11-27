@@ -49,11 +49,15 @@ function ReturnsResults() {
   const r = useResult()
   const [metric, setMetric] = useState<Metric>('equityIrr')
   // 13 model runs (about a second): only once the inputs or the metric have settled, so typing stays responsive.
-  // Until then the previous bars stay, marked as updating.
-  const [done, setDone] = useState<{ for: Inputs; metric: Metric; bars: TornadoBar[] } | null>(null)
+  // Until then the previous bars stay, marked as updating. A run that throws gives `bars: null`, shown as an error.
+  const [done, setDone] = useState<{ for: Inputs; metric: Metric; bars: TornadoBar[] | null } | null>(null)
   useEffect(() => {
     if (done?.for === r.inputs && done.metric === metric) return
-    const t = setTimeout(() => setDone({ for: r.inputs, metric, bars: tornado(r.inputs, METRICS[metric].get) }), TORNADO_SETTLE_MS)
+    const t = setTimeout(() => {
+      let bars: TornadoBar[] | null = null
+      try { bars = tornado(r.inputs, METRICS[metric].get) } catch { /* shown as an error below */ }
+      setDone({ for: r.inputs, metric, bars })
+    }, TORNADO_SETTLE_MS)
     return () => clearTimeout(t)
   }, [r.inputs, metric, done])
   const stale = !done || done.for !== r.inputs || done.metric !== metric
@@ -67,7 +71,8 @@ function ReturnsResults() {
           options={(Object.keys(METRICS) as Metric[]).map(m => ({ value: m, label: METRICS[m].label }))} />
       </div>
       <div aria-busy={stale} className={stale ? 'opacity-60 motion-safe:transition-opacity' : undefined}>
-        {done && done.metric === metric ? <TornadoChart bars={done.bars} format={METRICS[metric].format} />
+        {done && done.metric === metric ? (done.bars ? <TornadoChart bars={done.bars} format={METRICS[metric].format} />
+          : <p role="alert" className="py-10 text-center text-sm text-destructive">Couldn't work out the sensitivities for these inputs.</p>)
           : <p role="status" className="py-10 text-center text-sm text-muted-foreground">Working out the sensitivities…</p>}
       </div>
     </Panel>
