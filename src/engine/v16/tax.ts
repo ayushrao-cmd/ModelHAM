@@ -132,6 +132,8 @@ export function runTax(i: Inputs, g: Grid, pbtBeforeCsr: number[], bookDep: numb
 export interface CsrResult {
   /** Fin-IGAAP r400..r403 / Fin-INDAS r389..r392: 1 if the test on the previous FY holds (0 in the first FY). */
   netWorthTest: number[]; turnoverTest: number[]; profitTest: number[]; applicable: number[]
+  /** AVERAGE(PBT of the up-to-3 preceding FYs), 0 in the first FY (the CSR base before the rate). */
+  averagePbt: number[]
   /** r406 / r395: CSR expensed and paid in the FY (P&L r34 / IndAS r47 = −amount). */
   amount: number[]
 }
@@ -153,11 +155,9 @@ export function csr(i: Inputs, g: Grid, pbt: number[], netWorth: number[], turno
   // V16 quirk B-Q12: IndAS (Fin-INDAS!E395) tests E370, a GST cell (₹ Cr, never above a date serial), instead of the
   // year row, so IndAS CSR is never cut off by date.
   const cutOff = (k: number) => standard === 'igaap' && k > 0 && g.fys[k - 1] > endFy
-  const amount = g.fys.map((_, k) => {
-    if (!s.on || !applicable[k] || cutOff(k)) return 0 // 'Fin Set'!H11 switch (P&L r34)
-    const prior = pbt.slice(Math.max(0, k - 3), k)
-    return Math.max(sum(prior) / prior.length * s.rate, 0)
-  })
-  return { netWorthTest, turnoverTest, profitTest, applicable, amount }
+  const averagePbt = g.fys.map((_, k) => (k ? sum(pbt.slice(Math.max(0, k - 3), k)) / Math.min(k, 3) : 0))
+  const amount = g.fys.map((_, k) =>
+    !s.on || !applicable[k] || cutOff(k) ? 0 : Math.max(averagePbt[k] * s.rate, 0)) // 'Fin Set'!H11 switch (P&L r34)
+  return { netWorthTest, turnoverTest, profitTest, applicable, averagePbt, amount }
 }
 

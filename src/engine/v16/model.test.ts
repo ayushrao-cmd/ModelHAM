@@ -88,6 +88,8 @@ for (const set of SETS) {
       expectSeries(r.funds.interestOnFunds, ig(12), CELL, 'r12')
       expectSeries(r.igaap.pat, ig(36), CELL, 'r36')
       expectSeries(neg(r.igaap.csr), ig(34), CELL, 'r34')
+      expect(r.igaap.csrDetail.amount).toEqual(r.igaap.csr) // the working behind r34, for the drill-down
+      expectSeries(r.igaap.csrDetail.applicable, ig(403), 0, 'r403')
       const m = r.construction.months, cop = (n: number) => row(set, `COP-MOF!${n}`)
       expectSeries(m.map((x) => x.debtDraw), cop(75), DRAW, 'COP-MOF r75')
       expectSeries(m.map((x) => x.equityShareCapital), cop(90), DRAW, 'COP-MOF r90')

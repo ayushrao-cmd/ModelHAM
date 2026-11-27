@@ -7,7 +7,7 @@ import type { FundsResult } from './funds'
 import type { GstResult } from './gst'
 import type { OpexResult } from './opex'
 import type { RevenueResult } from './revenue'
-import type { CapitalisedCost, Depreciation, TaxResult } from './tax'
+import type { CapitalisedCost, CsrResult, Depreciation, TaxResult } from './tax'
 export type { Day }
 
 /** A COP-MOF column: a calendar-month slice from the appointed date to the 1st annuity (A §1). */
@@ -52,9 +52,36 @@ export interface V16Kpis {
 
 /** IGAAP P&L below EBITDA as the KPIs need it (Fin-IGAAP r13, r33–r36, CSR net worth r40 + r42..r46), per FY. The
  *  statements themselves are built from the result in `statements/igaap.ts`. */
-export interface IgaapProfit { turnover: number[]; pbt: number[]; csr: number[]; pat: number[]; netWorth: number[] }
+export interface IgaapProfit { turnover: number[]; pbt: number[]; csr: number[]; pat: number[]; netWorth: number[]
+  /** The CSR working (r400..r406) behind `csr`, for the drill-down. */
+  csrDetail: CsrResult }
 
 export interface Loop { converged: boolean; iterations: number }
+
+/**
+ * A statement row (`statements/`). `values` per FY of `StatementSet.years`, `total` = V16's D column (Σ values for
+ * flow rows). NaN = a cell V16 leaves blank: headers, BS totals, DSCR outside its window, rows on the half-yearly
+ * date grid (total only).
+ */
+export interface Row {
+  /** Statement key + V16 numbering (`pl.A.1`, `bs.B.3`), `r<row>` where V16 has no number; children extend it. */
+  id: string
+  /** V16's numbering text (column B) as shown, e.g. 'A.1', 'Add'. */
+  num?: string
+  label: string; values: number[]; total: number
+  kind: 'header' | 'line' | 'subtotal' | 'total' | 'check'
+  /** Drill-down (C-statements §8). Σ children = this row per FY and total unless `additive` is false. */
+  children?: Row[]; additive?: boolean
+  /** How the row is computed, in plain words, and the V16 cell it reproduces ('Fin-IGAAP!8'; '−Fin-IGAAP!331' when
+   *  shown with the opposite sign; free text for sources that are not FY rows). */
+  formula?: string; source?: string
+}
+export interface Statement { key: 'pl' | 'bs' | 'cf' | 'dscr' | 'irr'; title: string; rows: Row[] }
+export interface StatementSet {
+  standard: 'igaap' | 'indas'; years: Day[]; statements: Statement[]
+  /** BS check (liabilities − assets, rounded to 4 places as V16) and cash check (1 where cash < 0), per FY. */
+  checks: { bs: number[]; cash: number[] }
+}
 
 /** `runV16` (model.ts). */
 export interface V16Result {

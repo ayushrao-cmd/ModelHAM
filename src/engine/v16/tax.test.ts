@@ -151,6 +151,8 @@ describe('v16 tax: unit', () => {
     expect(out.amount[2]).toBe(0) // avg(0, −30) < 0 → 0
     expectClose(out.amount[4], 0.02 * (-30 + 10 + 50) / 3, 1e-12)
     expectClose(out.amount[n - 1], 0.02 * 50, 1e-12)
+    expect(out.averagePbt.slice(0, 3)).toEqual([0, 0, -15]) // first FY none; then avg(0), avg(0, −30)
+    expectClose(out.averagePbt[4], (-30 + 10 + 50) / 3, 1e-12)
     const off = csr({ ...i, csr: { ...i.csr, on: false } }, g, pbt, pat, pat, pat, 'igaap')
     expect(off.amount.every((v) => v === 0)).toBe(true)
   })

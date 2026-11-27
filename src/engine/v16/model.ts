@@ -8,7 +8,7 @@ import { runGst } from './gst'
 import { methodNotes } from './notes'
 import { runOpex } from './opex'
 import { runRevenue, toFy } from './revenue'
-import { bookDepreciation, capitalisedCost, csr, igaapProfit, runTax, taxDepreciation, type TaxResult } from './tax'
+import { bookDepreciation, capitalisedCost, csr, igaapProfit, runTax, taxDepreciation, type CsrResult, type TaxResult } from './tax'
 import type { Grid, IgaapProfit, Loop, V16Kpis, V16Result } from './types'
 
 export type { IgaapProfit, V16Result } from './types'
@@ -30,17 +30,18 @@ function afterTax(i: Inputs, g: Grid, c: ConstructionResult, turnover: number[],
   let s = 0
   const shareCapital = toFy(c.months.map((m) => m.equityShareCapital), g.periods.map((p) => p.end), g).map((v) => (s += v))
   let amount = Array<number>(n).fill(0), pat: number[] = [], netWorth: number[] = [], converged = false, iterations = 0
+  let detail: CsrResult | undefined
   while (!converged && iterations <= n) {
     iterations++
     let reserves = 0
     pat = pbt.map((v, k) => v - amount[k] - tax[k])
     netWorth = pat.map((v, k) => shareCapital[k] + (reserves += v)) // r40 + r42 (r43..r46 are 0 in V16)
-    const next = csr(i, g, pbt, netWorth, turnover, pat, 'igaap').amount
-    converged = maxDiff(next, amount) === 0
-    amount = next
+    detail = csr(i, g, pbt, netWorth, turnover, pat, 'igaap')
+    converged = maxDiff(detail.amount, amount) === 0
+    amount = detail.amount
   }
   if (!converged) pat = pbt.map((v, k) => v - amount[k] - tax[k]) // keep PAT consistent with the CSR returned
-  return { profit: { turnover, pbt, csr: amount, pat, netWorth }, loop: { converged, iterations } }
+  return { profit: { turnover, pbt, csr: amount, pat, netWorth, csrDetail: detail! }, loop: { converged, iterations } }
 }
 
 /**
