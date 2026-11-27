@@ -1,26 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { toDay, toIso } from '../dates'
-import type { Inputs } from '../types'
-import { golden, row, rowRaw, cols } from './golden'
+import { row, rowRaw, cols, inputsFor, fromSerial, XL } from './golden'
 import { V16_SAMPLE } from './sample'
 import { buildGrid } from './grid'
 import { pim, inflationIndex } from './indices'
 
 const SETS = ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rates50bp', 'equated']
-const XL = 25569 // Excel serial of 1970-01-01
-const day = (serial: number) => serial - XL
-
-/** V16_SAMPLE with a set's meta.inputs (Inputs paths → values) applied. */
-function inputsFor(set: string): Inputs {
-  const i = structuredClone(V16_SAMPLE) as unknown as Record<string, unknown>
-  for (const [path, v] of Object.entries(golden(set).meta.inputs)) {
-    const keys = path.split('.')
-    let o = i as Record<string, unknown>
-    for (const k of keys.slice(0, -1)) o = o[k] as Record<string, unknown>
-    o[keys[keys.length - 1]] = v
-  }
-  return i as unknown as Inputs
-}
+const day = fromSerial
 
 /** Golden values of an FY-keyed row, picked at the grid's FY ends via the sheet's column dates. */
 function atFys(set: string, key: string, colKey: string, fys: number[]): number[] {

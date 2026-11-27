@@ -6,6 +6,8 @@ import build1460 from './golden/build1460.json'
 import equity30 from './golden/equity30.json'
 import rates50bp from './golden/rates50bp.json'
 import equated from './golden/equated.json'
+import type { Inputs } from '../types'
+import { V16_SAMPLE } from './sample'
 
 export interface GoldenRow {
   label: string; total: number | null; values: (number | null)[]
@@ -50,4 +52,20 @@ export function expectClose(a: number, b: number, tol: number, what = ''): void 
 }
 export function expectSeries(actual: number[], g: { values: number[] }, tol: number, what = ''): void {
   g.values.forEach((v, i) => expectClose(actual[i] ?? 0, v, tol, `${what}[${i}]`))
+}
+
+export const XL = 25569 // Excel serial of 1970-01-01
+/** Excel date serial → engine Day (fractional serials keep their fraction). */
+export const fromSerial = (serial: number) => serial - XL
+
+/** V16_SAMPLE with a set's meta.inputs (Inputs paths → values) applied. */
+export function inputsFor(set: string): Inputs {
+  const i = structuredClone(V16_SAMPLE) as unknown as Record<string, unknown>
+  for (const [path, v] of Object.entries(golden(set).meta.inputs)) {
+    const keys = path.split('.')
+    let o = i as Record<string, unknown>
+    for (const k of keys.slice(0, -1)) o = o[k] as Record<string, unknown>
+    o[keys[keys.length - 1]] = v
+  }
+  return i as unknown as Inputs
 }
