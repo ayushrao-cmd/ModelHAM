@@ -17,7 +17,15 @@ export interface Ctx {
   header: (id: string, label: string, n: number, num?: string) => Row
 }
 
+/** Fin-IGAAP working rows whose D column V16 leaves blank although they are flows: the tax working, the GST ledgers,
+ *  the MM provision. Rows built with `fin` from them get a blank total (NaN contract, types.ts `Row`). */
+const NO_TOTAL = new Set([262, 263, 264, 265, 266, 267, ...Array.from({ length: 26 }, (_, k) => 365 + k), 393, 394, 395, 396])
+
 export const src = (n: number, flip = false) => `${flip ? '−' : ''}Fin-IGAAP!${n}`
+
+/** Top-level rows by their Fin-IGAAP row number, for the statements that reuse them. */
+export const byRow = (rows: Row[]): Record<number, Row> =>
+  Object.fromEntries(rows.map((row) => [+row.source!.split('!')[1], row]))
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 /** 15-Sep-2030. */
@@ -30,7 +38,8 @@ export function context(r: V16Result): Ctx {
     r, n, zero,
     byPeriod: (s) => toFy(s, ends, g), byAnnuity: (s) => toFy(s, r.revenue.dates, g),
     at: (v, d) => { const z = zero(), k = idx.get(fyEnd(d)); if (k !== undefined) z[k] = v; return z },
-    fin: (id, label, values, num, formula, o = {}) => line(id, label, values, { formula, source: src(num, o.flip), ...o }),
+    fin: (id, label, values, num, formula, o = {}) =>
+      line(id, label, values, { formula, source: src(num, o.flip), ...(NO_TOTAL.has(num) && { total: false }), ...o }),
     header: (id, label, num, v16) => header(id, label, n, { source: src(num), ...(v16 && { num: v16 }) }),
   }
 }

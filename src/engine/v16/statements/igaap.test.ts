@@ -3,7 +3,7 @@ import { expectClose, inputsFor, rowRaw } from '../golden'
 import { runV16 } from '../model'
 import type { Row, Statement } from '../types'
 import { buildIgaap } from './igaap'
-import { additiveErrors, walk } from './row'
+import { additiveErrors, isBlank, walk } from './row'
 
 // Plan tolerances: ₹0.01 Cr per cell, ratios 1e-4, IRRs 1e-6.
 const CELL = 0.01, RATIO = 1e-4, IRR = 1e-6
@@ -25,6 +25,12 @@ const TITLE_ROW: Record<Statement['key'], number> = { pl: 6, bs: 38, cf: 66, dsc
 /** Rows whose children are not a sum: tax and CSR build-ups, depreciation base × share, ratios, IRRs. */
 const NON_ADDITIVE = new Set([32, 34, 35, 106, 107, 142, 143, 169, 170, 171, 172])
 const SOURCE = /^(−)?Fin-IGAAP!(\d+)$/
+/** The half-yearly / mob-advance equity IRR rows: on a date grid, so blank FY values (total only). */
+const DATE_GRID = new Set(range(177, 208))
+/** NaN contract (types.ts `Row`): blank values only on headers, the DSCR window rows and the date-grid rows. */
+const BLANK_OK = new Set([...range(142, 145), ...DATE_GRID])
+const UNITS: Record<number, Row['unit']> = { 137: 'count', 142: 'ratio', 143: 'ratio', 144: 'ratio', 145: 'ratio',
+  169: 'pct', 170: 'pct', 171: 'pct', 172: 'pct', 194: 'pct', 195: 'pct', 207: 'pct', 208: 'pct' }
 
 const SETS = ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rates50bp', 'equated']
 
@@ -35,18 +41,18 @@ for (const set of SETS) {
     const srcRow = (row: Row) => SOURCE.exec(row.source ?? '')
     const tol = (v16: number) => (RATIO_ROWS.has(v16) ? RATIO : IRR_ROWS.has(v16) ? IRR : CELL)
 
-    /** Values (FY columns; skipped when the row is all blank, i.e. on the half-yearly date grid) and the total. */
+    /** Values (FY columns; not for the date-grid rows, total only) and the total; a blank total only where V16's is. */
     const matches = (row: Row, topLevel: boolean) => {
       const m = srcRow(row)!, sign = m[1] ? -1 : 1, v16 = +m[2], g = rowRaw(set, `Fin-IGAAP!${v16}`), t = tol(v16)
       if (row.kind === 'header') return
       const what = `${row.id} (r${v16})`
-      if (!row.values.every(Number.isNaN))
+      if (!DATE_GRID.has(v16))
         row.values.forEach((v, k) => {
           if (Number.isNaN(v)) expect(g.values[k], `${what}[${k}] blank`).toBeNull()
           else expectClose(v, sign * (g.values[k] ?? 0), t, `${what}[${k}]`)
         })
       if (Number.isFinite(row.total) && g.total !== null) expectClose(row.total, sign * g.total, t, `${what} total`)
-      if (topLevel) expect(Number.isNaN(row.total), `${what} total blank`).toBe(g.total === null)
+      expect(Number.isNaN(row.total), `${what} total blank (${topLevel ? 'top' : 'child'})`).toBe(g.total === null)
     }
 
     it('years = the FY grid; statements pl, bs, cf, dscr, irr with V16 titles', () => {
@@ -76,6 +82,29 @@ for (const set of SETS) {
         for (const { row, depth } of walk(x.rows))
           if (depth > 0 && srcRow(row)) { matches(row, false); count++ }
       expect(count).toBeGreaterThan(100)
+    })
+
+    it('NaN contract: blank values only on headers, DSCR window rows and date-grid rows; every row has a unit', () => {
+      for (const x of s.statements)
+        for (const top of x.rows)
+          for (const { row } of walk([top])) {
+            expect(['money', 'ratio', 'pct', 'count', 'date'], row.id).toContain(row.unit)
+            if (row.kind !== 'header' && row.values.some(isBlank))
+              expect(BLANK_OK.has(+srcRow(top)![2]), `${row.id} has blank values`).toBe(true)
+          }
+    })
+
+    it('units: DSCR rows ratio, IRR rows pct, annuity count; other top-level rows money', () => {
+      for (const x of s.statements)
+        for (const row of x.rows)
+          if (row.kind !== 'header') expect(row.unit, row.id).toBe(UNITS[+srcRow(row)![2]] ?? 'money')
+    })
+
+    it('ties to the engine: PAT = igaap.pat, reserves = net worth − share capital', () => {
+      const pat = st('pl').rows.find((x) => x.id === 'pl.F')!, bs = st('bs').rows
+      const sc = bs.find((x) => x.id === 'bs.A.1')!, rs = bs.find((x) => x.id === 'bs.A.3')!
+      pat.values.forEach((v, k) => expectClose(v, r.igaap.pat[k], 1e-9, `pat[${k}]`))
+      rs.values.forEach((v, k) => expectClose(v, r.igaap.netWorth[k] - sc.values[k], 1e-9, `reserves[${k}]`))
     })
 
     it('BS check and cash check rows are 0 every FY', () => {

@@ -2,7 +2,7 @@ import { addMonths, fyEnd } from '../../../dates'
 import { toFy } from '../../revenue'
 import type { Row } from '../../types'
 import { add, cumulative, leaves, line, neg, subtotal, total, under } from '../row'
-import { fmtDate, src, type Ctx } from './context'
+import { byRow, fmtDate, src, type Ctx } from './context'
 
 /** Fin-IGAAP r6–r36 (C-statements §2.1, §4.2–§4.4). `rows` in V16 order; `at` by V16 row for the other statements. */
 export function profitAndLoss(x: Ctx): { rows: Row[]; at: Record<number, Row> } {
@@ -88,15 +88,16 @@ export function profitAndLoss(x: Ctx): { rows: Row[]; at: Record<number, Row> } 
 
   // E.1 → previous-FY tests, average PBT of the 3 preceding FYs × rate (C §4.4).
   const flag = (id: string, label: string, s: number[], v16: number, what: string) =>
-    fin(`pl.E.1.${id}`, label, s, v16, `1 if the previous FY's ${what}`, { total: false })
+    fin(`pl.E.1.${id}`, label, s, v16, `1 if the previous FY's ${what}`, { total: false, unit: 'count' })
   const csrChildren = [
     flag('nw', 'Net Worth', cd.netWorthTest, 400, `net worth (share capital + reserves) > ${r.inputs.csr.netWorth}`),
     flag('to', 'Turnover', cd.turnoverTest, 401, `total revenue > ${r.inputs.csr.turnover}`),
     flag('np', 'Net Profit', cd.profitTest, 402, `PAT > ${r.inputs.csr.profit}`),
-    fin('pl.E.1.app', 'CSR Expenditure Applicability', cd.applicable, 403, '1 if any of the three tests holds', { total: false }),
+    fin('pl.E.1.app', 'CSR Expenditure Applicability', cd.applicable, 403, '1 if any of the three tests holds',
+      { total: 0, unit: 'count' }), // V16's D403 is a typed 0
     line('pl.E.1.avg', 'Average PBT of the 3 preceding FYs', cd.averagePbt,
       { total: false, formula: 'AVERAGE of PBT (E.) in up to 3 preceding FYs, losses included', source: 'AVERAGE of Fin-IGAAP!405, 3 preceding FYs' }),
-    line('pl.E.1.rate', 'CSR rate', constant(r.inputs.csr.rate), { total: false, formula: 'CSR share of average PBT', source: "'Fin Set'!L11" }),
+    line('pl.E.1.rate', 'CSR rate', constant(r.inputs.csr.rate), { total: false, unit: 'pct', formula: 'CSR share of average PBT', source: "'Fin Set'!L11" }),
     fin('pl.E.1.amt', 'CSR Expenditure', cd.amount, 406, 'Applicability × MAX(rate × average PBT, 0)'),
   ]
   const e1 = fin('pl.E.1', 'Less- CSR', neg(r.igaap.csr), 34,
@@ -112,7 +113,7 @@ export function profitAndLoss(x: Ctx): { rows: Row[]; at: Record<number, Row> } 
     fin('pl.E.2.pbtit', 'PBT as per Income Tax Act', t.pbtIt, 265, 'PBT + book depreciation − tax depreciation'),
     fin('pl.E.2.bf', 'Less - Brought Forward Losses', t.lossesBf, 266, 'Losses carried forward, including this year\'s loss'),
     fin('pl.E.2.taxable', 'PBT for Tax Calculation', t.taxable, 267, 'MAX(PBT as per Income Tax Act + b/f losses, 0)'),
-    line('pl.E.2.rate', 'Tax rate', constant(t.rate), { total: false, formula: 'Base rate × (1 + surcharge) × (1 + cess)', source: "'Fin Set'!B11" }),
+    line('pl.E.2.rate', 'Tax rate', constant(t.rate), { total: false, unit: 'pct', formula: 'Base rate × (1 + surcharge) × (1 + cess)', source: "'Fin Set'!B11" }),
     fin('pl.E.2.tax', `Less - Tax @ ${(t.rate * 100).toFixed(3)} %`, t.tax, 268, 'Taxable profit × tax rate, paid in the same FY'),
   ]
   const e2 = fin('pl.E.2', 'Less- Income Tax', neg(t.tax), 35, 'Current tax on taxable profit after loss set-off; no MAT, no deferred tax',
@@ -124,7 +125,5 @@ export function profitAndLoss(x: Ctx): { rows: Row[]; at: Record<number, Row> } 
     x.header('pl.A', 'Revenue', 7, 'A.'), a1, a2, a3, a4, a5, revenue,
     x.header('pl.B', 'Operational Cost', 14, 'B.'), ...b, expense, ebidta, c1, c2, c3, interest, ebdta, d1, pbt, e1, e2, pat,
   ]
-  const at: Record<number, Row> = {}
-  for (const row of rows) at[+row.source!.split('!')[1]] = row
-  return { rows, at }
+  return { rows, at: byRow(rows) }
 }

@@ -1,7 +1,7 @@
 import { CAPITALISED_ROWS } from '../../tax'
 import type { Row } from '../../types'
 import { add, leaves, line, neg, subtotal, total, under } from '../row'
-import { src, type Ctx } from './context'
+import { byRow, src, type Ctx } from './context'
 
 /** COP-MOF r322..r342 labels (V16's text), for the capitalised cost by line. */
 export const CAPITALISED_LABELS: Record<keyof typeof CAPITALISED_ROWS, string> = {
@@ -22,9 +22,6 @@ export function capitalisedByLine(x: Ctx, id: string, sign: 1 | -1): Row[] {
 export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Record<number, Row> } {
   const { r, fin, byPeriod } = x, c = r.cash, m = r.construction.months, f = r.funds, gst = r.gst, gr = r.construction.uses.grant
   const v = (n: number) => c.lines[n] ?? x.zero()
-  /** One source series: `label` from `source`. */
-  const via = (id: string, label: string, values: number[], source: string, formula: string) =>
-    [line(`${id}.src`, label, values, { formula, source })]
   /** A CF line equal to a P&L line: its drill-down too. */
   const fromPl = (id: string, num: string, n: number, p: number, formula: string, label = pl[p].label) =>
     fin(id, label, pl[p].values, n, formula, { num, additive: pl[p].additive,
@@ -37,10 +34,9 @@ export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Re
     byPeriod(m.map((p, j) => ((r.grid.periods[j].kind === 'construction') === construction ? p.debtDraw : 0)))
 
   const sources = [
-    fin('cf.A.1', 'Equity Share Capital', v(69), 69, 'Share capital drawn in the FY (share capital is drawn before USL)', { num: '1',
-      children: via('cf.A.1', 'Share capital drawn', byPeriod(m.map((p) => p.equityShareCapital)), 'COP-MOF!95 by FY', 'Σ of the months in the FY') }),
-    fin('cf.A.2', 'Equity - USL', v(70), 70, 'Unsecured loan from the promoter drawn in the FY', { num: '2',
-      children: via('cf.A.2', 'USL drawn', byPeriod(m.map((p) => p.equityUsl)), 'COP-MOF!96 by FY', 'Σ of the months in the FY') }),
+    fin('cf.A.1', 'Equity Share Capital', v(69), 69,
+      'Share capital drawn in the FY (COP-MOF r95 by month; share capital is drawn before USL)', { num: '1' }),
+    fin('cf.A.2', 'Equity - USL', v(70), 70, 'Unsecured loan from the promoter drawn in the FY (COP-MOF r96 by month)', { num: '2' }),
     off('cf.A.3', '3', 71, 'Equity - IDC', 'no separate IDC equity in V16'),
     off('cf.A.4', '4', 72, 'Equity - DSR', 'no separate DSR equity in V16'),
     off('cf.A.5', '5', 73, 'Equity - Working Capital', 'no separate working-capital equity in V16'),
@@ -52,30 +48,28 @@ export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Re
         line('cf.A.7.cod', 'COD to 1st annuity', draws(false),
           { formula: 'Debt drawn after COD, to the 1st annuity', source: 'COP-MOF!215 by FY' }),
       ] }),
-    fin('cf.A.8', 'Short Term Loan', v(76), 76, 'Short-term loan drawn (10% of bid, two instalments), passed to the EPC contractor',
-      { num: '8', children: via('cf.A.8', 'Addition of STL', v(76), 'COP-MOF!155 by FY', 'Σ of the months in the FY') }),
+    fin('cf.A.8', 'Short Term Loan', v(76), 76,
+      'Short-term loan drawn (10% of bid, two instalments; COP-MOF r155), passed to the EPC contractor', { num: '8' }),
     off('cf.A.9', '9', 77, 'Mobilization Advance from Authority', 'V16 takes an STL instead of the Authority advance'),
-    fin('cf.A.10', 'Mobilization Advance recovered from EPC', v(78), 78, 'Advance recovered from EPC bills at grant milestones',
-      { num: '10', children: via('cf.A.10', 'Mobilization Advance Adjusted by EPC Contractor', v(78), '−COP-MOF!168 by FY', 'Σ of the months in the FY') }),
+    fin('cf.A.10', 'Mobilization Advance recovered from EPC', v(78), 78,
+      'Advance recovered from EPC bills at grant milestones 1–8 (COP-MOF r168)', { num: '10' }),
     fin('cf.A.11', 'Grant Received from Authority', v(79), 79,
       'Construction support (40% of bid in 10 tranches) with PIM, ex-GST, in the FY of each tranche', { num: '11', children: [
         line('cf.A.11.base', 'Grant (Without PIM)', tranches(gr.amount.map((a, j) => a - gr.pim[j])),
           { formula: 'Bid price × 40% / 10 per tranche, on its crossing date', source: 'DB!85 by DB!78' }),
         line('cf.A.11.pim', 'PIM on Grant', tranches(gr.pim), { formula: 'Price-index uplift on each tranche', source: 'DB!86 by DB!78' }),
       ] }),
-    fin('cf.A.12', 'GST Output Collected - CP', v(80), 80, 'GST on the grant', { num: '12',
-      children: [fin('cf.A.12.src', 'GST on Grant', v(80), 377, 'Grant × GST on works')] }),
+    fin('cf.A.12', 'GST Output Collected - CP', v(80), 80, 'GST on the grant: grant × GST on works (GST ledger r377)', { num: '12' }),
     off('cf.A.13', '13', 81, 'Interim Debt', 'no interim debt in V16'),
   ]
   const applications = [
     fin('cf.A.14', 'Construction Cost (Intangible Asset)', v(83), 83, 'Total cost to be capitalised (ex-GST, incl. IDC), by line',
       { num: '14', children: capitalisedByLine(x, 'cf.A.14', -1) }),
-    fin('cf.A.15', 'GST Input Paid', v(84), 84, 'GST paid on construction costs (carried as GST credit)', { num: '15',
-      children: [fin('cf.A.15.src', 'GST on CP Period Expenses', v(84), 366, 'Monthly input GST, Σ by FY', { flip: true })] }),
-    fin('cf.A.16', 'Repayment of STL', v(85), 85, 'STL repaid at grant milestones 1–8', { num: '16',
-      children: via('cf.A.16', 'Repayment', v(85), 'COP-MOF!156 by FY', 'Σ of the months in the FY') }),
-    fin('cf.A.17', 'Mobilization Advance to EPC', v(86), 86, 'STL passed to the EPC contractor as mobilisation advance', { num: '17',
-      children: via('cf.A.17', 'Mobilization Advance passed by SPV', v(86), '−COP-MOF!167 by FY', 'Σ of the months in the FY') }),
+    fin('cf.A.15', 'GST Input Paid', v(84), 84,
+      'GST paid on construction costs, carried as GST credit (COP-MOF r277 by month; GST ledger r366)', { num: '15' }),
+    fin('cf.A.16', 'Repayment of STL', v(85), 85, 'STL repaid at grant milestones 1–8 (COP-MOF r156)', { num: '16' }),
+    fin('cf.A.17', 'Mobilization Advance to EPC', v(86), 86,
+      'STL passed to the EPC contractor as mobilisation advance (COP-MOF r167)', { num: '17' }),
     off('cf.A.18', '18', 87, 'Mobilization Advance Repaid to Authority', 'no Authority advance in V16'),
     fin('cf.A.19', 'Fund for Expenses', v(88), 88, 'Funds for expenses funded from the project cost (COD to 1st annuity interest and O&M)',
       { num: '19', children: [
@@ -125,9 +119,8 @@ export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Re
       fin('cf.B.app.B.2.used', 'GST Credit Available', add(gst.creditUsedCp, gst.creditUsedOps), 384,
         'Input credit set off: MIN(credit available, output)', { flip: true }),
     ] }),
-    fin('cf.B.app.B.3', 'Repayment of Senior Debt', v(111), 111, 'Senior-debt instalments in the FY', { num: '3',
-      children: [line('cf.B.app.B.3.src', 'Repayment', v(111), { formula: 'Repayment % × debt at the 1st annuity, by FY',
-        source: 'Fin-IGAAP!220 (debt schedule from the COD year)' })] }),
+    fin('cf.B.app.B.3', 'Repayment of Senior Debt', v(111), 111,
+      'Senior-debt instalments in the FY: repayment % × debt at the 1st annuity (debt schedule r220)', { num: '3' }),
     fin('cf.B.app.B.4', 'Transfer to/from DSR Fund (Including Funded from COP)', v(112), 112,
       'DSR created (−) or released (+) in the FY', { num: '4', children: [
         fin('cf.B.app.B.4.int', 'Interest DSR: created/(released)', neg(f.dsrInterest.setAside), 332, 'Top-up capped by cash available', { flip: true }),
@@ -168,7 +161,5 @@ export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Re
     h('cf.B.app.B', 'Other Application of Funds', 108, 'B'), ...otherApps,
     h('cf.C', 'Cash Account', 117, 'C.'), opening, inflow, outflow, closing,
   ]
-  const at: Record<number, Row> = {}
-  for (const row of rows) at[+row.source!.split('!')[1]] = row
-  return { rows, at }
+  return { rows, at: byRow(rows) }
 }

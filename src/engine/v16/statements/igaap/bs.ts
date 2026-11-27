@@ -8,11 +8,8 @@ import { src, type Ctx } from './context'
  * roll-forward (§6.1): opening (the previous closing) + the year's movements = the line (the closing).
  */
 export function balanceSheet(x: Ctx, pl: Record<number, Row>, cf: Record<number, Row>): Row[] {
-  const { r, n } = x, m = r.construction.months, f = r.funds, gst = r.gst, bd = r.bookDep
+  const { r, n, fin } = x, m = r.construction.months, f = r.funds, gst = r.gst, bd = r.bookDep
   const none = { total: false as const }
-  /** A movement (a flow: D total = Σ) or, with `none`, a balance. */
-  const fin = (id: string, label: string, values: number[], v16: number, formula: string, o: { flip?: boolean; total?: false } = {}) =>
-    x.fin(id, label, values, v16, formula, o)
   /** Opening = previous FY's closing of `v16`. */
   const opening = (id: string, closing: number[], v16: number) => line(`${id}.open`, 'Opening balance', previous(closing),
     { ...none, formula: 'Previous FY\'s closing balance', source: `Fin-IGAAP!${v16}, previous FY` })
@@ -21,7 +18,7 @@ export function balanceSheet(x: Ctx, pl: Record<number, Row>, cf: Record<number,
     fin(`${id}.cf${cfRow}`, label, flip ? neg(cf[cfRow].values) : cf[cfRow].values, cfRow, `Cash flow row ${cfRow} in the FY`, { flip })
   /** A balance line with its roll-forward children. */
   const bal = (id: string, num: string, label: string, closing: number[], v16: number, formula: string, moves: Row[], open?: Row) =>
-    x.fin(id, label, closing, v16, formula, { num, ...none, children: [open ?? opening(id, closing, v16), ...moves] })
+    fin(id, label, closing, v16, formula, { num, ...none, children: [open ?? opening(id, closing, v16), ...moves] })
   // V16 reads the balance at the period ending on the FY end (SUMIF on COP-MOF r8).
   const atFyEnd = (s: number[]) => { const b = new Map(r.grid.periods.map((p, k) => [p.end, s[k]])); return r.grid.fys.map((d) => b.get(d) ?? 0) }
   const stl = atFyEnd(m.map((v) => v.stlBalance))
@@ -33,7 +30,7 @@ export function balanceSheet(x: Ctx, pl: Record<number, Row>, cf: Record<number,
       [move('bs.A.1', 'Drawn in the FY', 69)]),
     bal('bs.A.2', 'A.2', 'Equity - USL', cumulative(cf[70].values), 41, 'Unsecured loan drawn to date', [move('bs.A.2', 'Drawn in the FY', 70)]),
     bal('bs.A.3', 'A.3', 'Reserves & Surplus', cumulative(pl[36].values), 42, 'Profit after tax to date (no dividends)',
-      [x.fin('bs.A.3.pat', 'Profit after tax', pl[36].values, 36, 'P&L F. for the FY')]),
+      [fin('bs.A.3.pat', 'Profit after tax', pl[36].values, 36, 'P&L F. for the FY')]),
     zero('bs.A.4', 'A.4', 'Equity - IDC', 43, 'no separate IDC equity in V16', [move('bs.A.4', 'Drawn in the FY', 71)]),
     zero('bs.A.5', 'A.5', 'Equity - DSR', 44, 'no separate DSR equity in V16', [move('bs.A.5', 'Drawn in the FY', 72)]),
     zero('bs.A.6', 'A.6', 'Equity - Working Capital', 45, 'no separate working-capital equity in V16', [move('bs.A.6', 'Drawn in the FY', 73)]),
@@ -56,7 +53,7 @@ export function balanceSheet(x: Ctx, pl: Record<number, Row>, cf: Record<number,
   const dsr = add(f.dsrInterest.closing, f.dsrPrincipal.closing)
   const assets = [
     bal('bs.B.1', 'B.1', 'Intangible Asset', bd.closing, 54, 'Cumulative additions less cumulative book amortisation', [
-      x.fin('bs.B.1.add', 'Addition', bd.addition, 239, 'Capitalised construction cost by line, less the grant with PIM',
+      fin('bs.B.1.add', 'Addition', bd.addition, 239, 'Capitalised construction cost by line, less the grant with PIM',
         { children: [...capitalisedByLine(x, 'bs.B.1.add', 1), line('bs.B.1.add.grant', 'Less: Grant (with PIM)',
           neg(r.capitalised.grantByFy), { formula: 'Grant with PIM ex-GST, in the FY of each tranche', source: 'DB!84 by DB!78' })] }),
       fin('bs.B.1.dep', 'Depreciation', neg(bd.depreciation), 240, 'Book amortisation (P&L D.1)'),
@@ -89,7 +86,8 @@ export function balanceSheet(x: Ctx, pl: Record<number, Row>, cf: Record<number,
     bal('bs.B.8', 'B.8', 'Cash in Bank', r.cash.closing, 61, 'Closing cash of the cash flow statement (no distributions)', [
       fin('bs.B.8.in', 'Total Cash Inflow', cf[119].values, 119, 'All cash sources in the FY'),
       fin('bs.B.8.out', 'Total Cash outflow', cf[120].values, 120, 'All cash applications in the FY'),
-    ], fin('bs.B.8.open', 'Opening Balance', r.cash.opening, 118, 'Previous FY\'s closing cash', none)),
+    ], fin('bs.B.8.open', 'Opening Balance', r.cash.opening, 118, 'Previous FY\'s closing cash',
+      { total: r.cash.opening[0] ?? 0 })), // V16's D118 is a typed 0
   ]
   const ast = total('bs.r62', 'Total Assets', assets.map((c) => under('bs.r62', c)), { ...none, source: src(62), formula: 'B.1 to B.8' })
   const round4 = (v: number) => Math.round(v * 1e4) / 1e4 || 0 // V16 ROUND(…, 4); `|| 0` turns −0 into 0

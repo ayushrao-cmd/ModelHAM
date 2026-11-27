@@ -23,7 +23,7 @@ export function dscr(x: Ctx): Row[] {
   const cfads = total('dscr.B', 'Total Cash Available for DSCR', leaves('dscr.B', [accruals, ...adj]),
     { num: 'B.', ...none, source: src(136), formula: 'Cash accruals + the fund, GST and MMR adjustments (post tax, before DSR movements)' })
   const count = fin('dscr.r137', 'No. of Repayments V. Annuities', d.repaymentsInFy, 137,
-    'Annuities in the FY up to the last repayment date', none)
+    'Annuities in the FY up to the last repayment date', { ...none, unit: 'count' })
   const annuityWise = fin('dscr.r138', 'Total Cash Available for DSCR -  Annuity Wise', d.cfadsAnnuity, 138,
     'Cash available for DSCR; in the last repayment FY halved × the repayments in it; 0 after', none)
   const rep = fin('dscr.r139', 'Senior Debt Repayment', d.repayment, 139, 'Cash flow B.3, positive')
@@ -32,20 +32,20 @@ export function dscr(x: Ctx): Row[] {
     { source: src(141), formula: 'Repayment + interest' })
   const ratio = fin('dscr.C', 'DSCR', c.dscr.map((v) => v ?? NaN), 142,
     'Annuity-wise cash available / debt service, from the 1st-annuity FY to the last repayment FY',
-    { num: 'C.', ...none, additive: false, children: leaves('dscr.C', [annuityWise, service]) })
+    { num: 'C.', ...none, unit: 'ratio', additive: false, children: leaves('dscr.C', [annuityWise, service]) })
   const window = c.dscr.map((v) => v !== null)
   const inWindow = (s: number[]) => s.map((v, k) => (window[k] ? v : NaN))
   const blank = Array<number>(x.n).fill(NaN)
   const avg = fin('dscr.D', 'Average DSCR', blank, 143,
     'Σ cash available (not halved in the last FY, V16 quirk B-Q5) / Σ debt service over the DSCR years',
-    { num: 'D.', total: c.dscrAvg ?? 0, additive: false, children: [
+    { num: 'D.', total: c.dscrAvg ?? 0, unit: 'ratio', additive: false, children: [
       line('dscr.D.cfads', 'Total Cash Available for DSCR, DSCR years', inWindow(c.cfads),
         { formula: 'Cash available for DSCR in the DSCR years', source: 'Fin-IGAAP!136, DSCR years' }),
       line('dscr.D.service', 'Principal + Interest Repayment, DSCR years', inWindow(d.debtService),
         { formula: 'Debt service in the DSCR years', source: 'Fin-IGAAP!141, DSCR years' }),
     ] })
-  const min = fin('dscr.E', 'Minimum DSCR', blank, 144, 'Lowest DSCR over the DSCR years', { num: 'E.', total: c.dscrMin ?? 0 })
-  const max = fin('dscr.F', 'Maximum DSCR', blank, 145, 'Highest DSCR over the DSCR years', { num: 'F.', total: c.dscrMax ?? 0 })
+  const min = fin('dscr.E', 'Minimum DSCR', blank, 144, 'Lowest DSCR over the DSCR years', { num: 'E.', total: c.dscrMin ?? 0, unit: 'ratio' })
+  const max = fin('dscr.F', 'Maximum DSCR', blank, 145, 'Highest DSCR over the DSCR years', { num: 'F.', total: c.dscrMax ?? 0, unit: 'ratio' })
   return [pat, dep, int, accruals, ...adj, cfads, count, annuityWise, rep, intr, service, ratio, avg, min, max]
 }
 
@@ -75,11 +75,11 @@ export function irr(x: Ctx, cf: Record<number, Row>): Row[] {
   const rate = (id: string, label: string, v: number | null, v16: number, of: Row) => {
     const values = Array<number>(n).fill(0)
     values[n - 1] = v ?? 0
-    return fin(id, label, values, v16, `IRR of ${of.label} over the FY columns`, { additive: false, children: [under(id, of, false)] })
+    return fin(id, label, values, v16, `IRR of ${of.label} over the FY columns`, { unit: 'pct', additive: false, children: [under(id, of, false)] })
   }
   const sum = (s: number[]) => sumFinite(s), blank = () => Array<number>(n).fill(NaN)
-  const hy = (id: string, num: string | undefined, label: string, v16: number, t: number, formula: string) =>
-    fin(id, label, blank(), v16, formula, { total: t, ...(num && { num }) })
+  const hy = (id: string, num: string | undefined, label: string, v16: number, t: number, formula: string,
+    unit: Row['unit'] = 'money') => fin(id, label, blank(), v16, formula, { total: t, unit, ...(num && { num }) })
   return [
     x.header('irr.r154', 'Cash Outflow', 154, 'I'), A, B, x.header('irr.r157', 'Cash Inflow', 157, 'II'), C, D, E, rep, int, dsr, eq,
     F, G, H, I,
@@ -97,8 +97,8 @@ export function irr(x: Ctx, cf: Record<number, Row>): Row[] {
     hy('irr.HY.C', 'C.', 'Net Cashflow Post Tax', 190, sum(h.post), 'Inflow + outflow'),
     hy('irr.HY.r191', undefined, 'Add - Tax Expense', 191, sum(h.tax), 'Each FY\'s tax split over its annuity month ends'),
     hy('irr.HY.D', 'D.', 'Net Cashflow Pre Tax', 192, sum(h.pre), 'Post-tax flow + tax'),
-    hy('irr.HY.E', 'E.', 'Post - Tax Equity IRR', 194, c.irr.equityHalfYearly ?? 0, 'XIRR of the post-tax flows on their dates'),
-    hy('irr.HY.F', 'F.', 'Pre - Tax Equity IRR', 195, c.irr.equityHalfYearlyPre ?? 0, 'XIRR of the pre-tax flows on their dates'),
+    hy('irr.HY.E', 'E.', 'Post - Tax Equity IRR', 194, c.irr.equityHalfYearly ?? 0, 'XIRR of the post-tax flows on their dates', 'pct'),
+    hy('irr.HY.F', 'F.', 'Pre - Tax Equity IRR', 195, c.irr.equityHalfYearlyPre ?? 0, 'XIRR of the pre-tax flows on their dates', 'pct'),
     x.header('irr.MA', 'Equity IRR - Post Adjustment of Mobilization Advance to EPC Balance', 197),
     fin('irr.MA.A', 'Mob Advance Balance', blank(), 199, 'Mobilisation advance with the EPC contractor at each month end',
       { num: 'A', total: false }),
@@ -108,7 +108,7 @@ export function irr(x: Ctx, cf: Record<number, Row>): Row[] {
     hy('irr.MA.E', 'E.', 'Net Cash Flow Post Tax', 203, sum(h.mobPost), 'Inflow + adjusted equity invested'),
     hy('irr.MA.F', 'F.', 'Add Tax Expense', 204, sum(h.tax), 'As the half-yearly block'),
     hy('irr.MA.G', 'G.', 'Net Cashflow Pre Tax', 205, sum(h.mobPre), 'Post-tax flow + tax'),
-    hy('irr.MA.H', 'H.', 'Post - Tax Equity IRR', 207, c.irr.equityMobAdj ?? 0, 'XIRR of the adjusted post-tax flows'),
-    hy('irr.MA.I', 'I.', 'Pre - Tax Equity IRR', 208, c.irr.equityMobAdjPre ?? 0, 'XIRR of the adjusted pre-tax flows'),
+    hy('irr.MA.H', 'H.', 'Post - Tax Equity IRR', 207, c.irr.equityMobAdj ?? 0, 'XIRR of the adjusted post-tax flows', 'pct'),
+    hy('irr.MA.I', 'I.', 'Pre - Tax Equity IRR', 208, c.irr.equityMobAdjPre ?? 0, 'XIRR of the adjusted pre-tax flows', 'pct'),
   ]
 }

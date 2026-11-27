@@ -60,8 +60,9 @@ export interface Loop { converged: boolean; iterations: number }
 
 /**
  * A statement row (`statements/`). `values` per FY of `StatementSet.years`, `total` = V16's D column (Σ values for
- * flow rows). NaN = a cell V16 leaves blank: headers, BS totals, DSCR outside its window, rows on the half-yearly
- * date grid (total only).
+ * flow rows). NaN = a blank cell, nothing else: in `values` only on headers, DSCR rows outside the DSCR window
+ * (r142–r145 and their drill-down) and the half-yearly / mob-advance equity IRR rows (r177–r208, total only: their
+ * columns are a date grid); in `total` only where V16's D column is blank (balances, ratios by FY, constants).
  */
 export interface Row {
   /** Statement key + V16 numbering (`pl.A.1`, `bs.B.3`), `r<row>` where V16 has no number; children extend it. */
@@ -70,6 +71,9 @@ export interface Row {
   num?: string
   label: string; values: number[]; total: number
   kind: 'header' | 'line' | 'subtotal' | 'total' | 'check'
+  /** How to format the values: ₹ Cr (default), a ratio (DSCR), a percentage held as a fraction (IRRs, rates), a
+   *  count or flag, or a date serial (Day). */
+  unit: 'money' | 'ratio' | 'pct' | 'count' | 'date'
   /** Drill-down (C-statements §8). Σ children = this row per FY and total unless `additive` is false. */
   children?: Row[]; additive?: boolean
   /** How the row is computed, in plain words, and the V16 cell it reproduces ('Fin-IGAAP!8'; '−Fin-IGAAP!331' when
