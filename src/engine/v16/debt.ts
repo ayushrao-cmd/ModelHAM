@@ -27,7 +27,7 @@ export interface DebtResult {
 }
 
 /** DB!D62: half-year end of a date (31 Mar for Oct–Mar, 30 Sep for Apr–Sep). */
-const halfYearEnd = (d: Day) => {
+export const halfYearEnd = (d: Day) => {
   const m = new Date(d * 86_400_000).getUTCMonth()
   return m >= 3 && m <= 8 ? eomonth(addMonths(fyEnd(d), -6)) : fyEnd(d)
 }
