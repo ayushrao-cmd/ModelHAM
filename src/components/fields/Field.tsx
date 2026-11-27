@@ -136,6 +136,8 @@ export function Field({ id, className, labelHidden }: { id: string; className?: 
         <SelectContent>{def.options?.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
       </Select>
     )
+  else if (def.kind === 'toggle')
+    control = <input type="checkbox" id={dom} checked={value as boolean} onChange={e => setInput(id, e.target.checked)} {...aria} className="size-5 accent-primary" />
   else if (def.kind === 'date')
     control = <DateField id={dom} value={value as string} onCommit={v => setInput(id, v)} {...aria} />
   else

@@ -60,7 +60,7 @@ export const FIELDS: FieldDef[] = [
   soft('build.perfSecurityPctOfBid', 'Performance Security (% of Bid)', 'percent', 'Performance Security as a share of Bid Price.', { min: 0, max: 0.2, step: 0.005, prefill: 'standard' }),
   soft('build.perfSecurityCommissionPa', 'Performance Security Commission (p.a.)', 'percent', 'Annual bank commission on Performance Security.', { min: 0, max: 0.05, step: 0.0005, prefill: 'standard' }),
   phasing('build.phasing', 'EPC Phasing', 'select', 'How EPC spend is spread over the build period.',
-    { options: [{ value: 'equated', label: 'Equated monthly' }, { value: 'sCurve', label: 'S-curve' }] }),
+    { options: [{ value: 'manual', label: 'Manual monthly %' }, { value: 'equated', label: 'Equated monthly' }, { value: 'sCurve', label: 'S-curve' }] }),
 
   struct('support.pctOfBid', 'Construction Support (% of Bid)', 'percent', 'Total Construction Support from the Authority as a share of Bid Price.', { min: 0, max: 0.6, step: 0.01, prefill: 'standard' }),
   struct('support.tranches', 'Support Tranches', 'trancheList', 'Physical progress at which each Construction Support tranche is paid, and its weight: Construction Support (% of Bid) is split across tranches in proportion to their weights.', { prefill: 'standard' }),
@@ -111,6 +111,30 @@ export const FIELDS: FieldDef[] = [
   tgt('targets.equityIrrHurdle', 'Equity IRR Hurdle', 'percent', 'Target equity return; used by the Solve Bid Price control and Health.', { min: 0, max: 0.5, step: 0.005, prefill: 'policy' }),
   // Appended, not inserted (FIELDS order is pinned); shown after Support Tranches via `after`.
   struct('support.lagDays', 'Support Payment Lag', 'days', 'Days from the end of the month a tranche is earned to the month it is received (engineer certification and Authority release). A receipt that would fall after completion is taken in the last build month; capped at 90 days so build funding still balances.', { min: 0, max: 90, step: 5, prefill: 'policy', after: 'support.tranches' }),
+  // V16 inputs, appended (order pinned); shown next to their related field via `after`.
+  struct('stl.pctOfBid', 'Short-term loan (% of bid)', 'percent', 'Short-term loan (STL) taken in two equal instalments early in the build, passed to the EPC contractor back to back, as a share of Bid Price.', { min: 0, max: 0.3, step: 0.01, prefill: 'policy', after: 'capital.shareCapitalPct' }),
+  loan('funds.fdRate', 'Interest on Funds (FD Rate)', 'percent', 'Fixed-deposit rate earned on the expense, DSR and MMR funds.', { min: 0, max: 0.2, step: 0.0025, prefill: 'policy', after: 'capital.dscrWarn' }),
+  loan('funds.ffeDays', 'Funds for Expenses (days)', 'days', 'Days of operating expenses held in the Funds for Expenses account.', { min: 0, max: 365, step: 15, prefill: 'policy', after: 'funds.fdRate' }),
+  loan('funds.mmrShare', 'MMR Set-aside (share of Major Maintenance)', 'percent', 'Share of the next Major Maintenance cost set aside each year in the maintenance reserve.', { min: 0, max: 1, step: 0.05, prefill: 'policy', after: 'funds.ffeDays' }),
+  loan('funds.mmrYears', 'MMR Set-aside Years', 'years', 'Number of years the maintenance reserve is built up before each Major Maintenance.', { min: 1, max: 10, step: 1, prefill: 'policy', after: 'funds.mmrShare' }),
+  loan('funds.dsrInterestMonths', 'DSR Interest (months)', 'number', 'Months of interest held in the debt service reserve.', { min: 0, max: 12, step: 1, prefill: 'policy', after: 'funds.mmrYears' }),
+  tax('csr.on', 'CSR Applies', 'toggle', 'Whether the company is subject to Corporate Social Responsibility spending.', { prefill: 'policy' }),
+  tax('csr.rate', 'CSR Rate', 'percent', 'CSR spend as a share of average profit before tax of the last three years.', { min: 0, max: 0.1, step: 0.005, prefill: 'policy', after: 'csr.on' }),
+  tax('tax.depLifeYears', 'Tax Depreciation Life (years)', 'years', 'Straight-line life for income-tax depreciation of the project cost.', { min: 1, max: 40, step: 1, prefill: 'policy', after: 'tax.cess' }),
+  phasing('build.manualPhasing', 'Manual EPC Phasing', 'percentList', '36 monthly shares of EPC spend, by month number from the Start Date; must total 100%.', { after: 'build.phasing' }),
+  soft('build.spvManpower', 'SPV Manpower (Build)', 'money', 'SPV manpower cost during build in ₹ Cr, spread over the build period; no GST.', { min: 0, step: 0.1, after: 'build.patrolRental' }),
+  idx('indexation.pim', 'Price Index Multiple (PIM)', 'percent', 'Annual rate applied to the milestone and grant price adjustment (simple, not compounded).', { min: 0, max: 0.2, step: 0.005, prefill: 'standard', after: 'indexation.wpiWeight' }),
+  soft('build.patrolRentalPerMonth', 'Patrol Rental (per month)', 'money', 'Patrol vehicle rental per month of build in ₹ Cr; the build total is this x 12 x build days / 365.', { min: 0, step: 0.001, prefill: 'policy', after: 'build.patrolRental' }),
+  soft('build.flcOneOff', 'Finance & Legal (one-off)', 'money', 'One-time finance and legal costs in ₹ Cr: TEV, LLC, LIA and stamp duty.', { min: 0, step: 0.01, prefill: 'policy', after: 'build.financeLegal' }),
+  soft('build.flcAnnual', 'Finance & Legal (per year)', 'money', 'Finance and legal costs in ₹ Cr charged for each 31 March falling in the build: lead lender, escrow, rating, auditor and secretarial.', { min: 0, step: 0.05, prefill: 'policy', after: 'build.flcOneOff' }),
+  // Structural V16 settings the brief's id list omits; kept as fields so every Inputs leaf has one.
+  struct('stl.option', 'Mobilisation Advance Type', 'select', 'Mobilisation advance is a short-term loan (the only option for now).', { options: [{ value: 'STL', label: 'Short-term loan' }], prefill: 'policy', after: 'stl.pctOfBid' }),
+  struct('stl.repayShare', 'STL Repayment per Milestone', 'percent', 'Share of the short-term loan repaid at each grant milestone.', { min: 0, max: 1, step: 0.0125, prefill: 'policy', after: 'stl.option' }),
+  struct('stl.repayMilestones', 'STL Repayment Milestones', 'number', 'Number of grant milestones at which the short-term loan is repaid.', { min: 1, max: 10, step: 1, prefill: 'policy', after: 'stl.repayShare' }),
+  loan('funds.dsrPrincipalInstalments', 'DSR Principal (instalments)', 'number', 'Number of next principal instalments held in the debt service reserve.', { min: 0, max: 4, step: 1, prefill: 'policy', after: 'funds.dsrInterestMonths' }),
+  tax('csr.netWorth', 'CSR Net Worth Threshold', 'money', 'CSR applies when the previous year net worth exceeds this, in ₹ Cr.', { min: 0, step: 10, prefill: 'policy', after: 'csr.rate' }),
+  tax('csr.turnover', 'CSR Turnover Threshold', 'money', 'CSR applies when the previous year revenue exceeds this, in ₹ Cr.', { min: 0, step: 10, prefill: 'policy', after: 'csr.netWorth' }),
+  tax('csr.profit', 'CSR Profit Threshold', 'money', 'CSR applies when the previous year profit after tax exceeds this, in ₹ Cr.', { min: 0, step: 1, prefill: 'policy', after: 'csr.turnover' }),
 ]
 
 const byId = new Map(FIELDS.map(x => [x.id, x]))

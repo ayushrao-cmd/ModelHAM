@@ -35,7 +35,7 @@ export function supportSchedule(i: Inputs, t: Timeline) {
   let acc = 0
   const elapsed = days.map(d => (acc += d))
   const equated = days.map(d => d / totalDays)
-  const phys = b.phasing === 'equated' ? equated
+  const phys = b.phasing !== 'sCurve' ? equated // 'manual' is v16-only; the old engine treats it as equated
     : elapsed.map((e, m) => sCurve(e / totalDays) - sCurve(m ? elapsed[m - 1] / totalDays : 0))
   acc = 0
   const cumPhysical = phys.map(w => (acc += w))

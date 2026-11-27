@@ -47,6 +47,7 @@ function fieldProblem(f: FieldDef, v: unknown, i: Inputs): string | null {
     if (f.max != null && n > f.max) return `${f.label} must be at most ${show(f.kind, f.max)} (is ${show(f.kind, n)}).`
     return null
   }
+  if (f.kind === 'toggle') return typeof v === 'boolean' ? null : `${f.label} must be on or off.`
   if (f.kind === 'text') return typeof v === 'string' && v.trim() ? null : `${f.label} is required.`
   if (f.kind === 'date') return isIsoDate(v) ? null : `${f.label} must be a valid date (YYYY-MM-DD).`
   if (f.kind === 'select') return f.options?.some(o => o.value === v) ? null : `${f.label} must be one of ${f.options?.map(o => o.label).join(', ')}.`

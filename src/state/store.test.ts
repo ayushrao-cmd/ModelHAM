@@ -297,5 +297,33 @@ describe('store', () => {
     expect(st().scenarios[0].inputs).toEqual(DEFAULT_INPUTS)
     expect(st().activeId).toBe(st().scenarios[0].id)
   })
+
+  it('v2 blank project migrates to v3 keeping its empty paths and marking the new blank fields empty', async () => {
+    const { BLANK_EMPTY, encodeEmpty } = await import('./projects')
+    const old = BLANK_EMPTY.filter(p => !p.startsWith('build.manualPhasing') && !p.startsWith('build.spvManpower'))
+    const keep = old.filter(p => p !== 'deal.bidPrice') // bid price was filled in
+    cookies.set(KEY, JSON.stringify({ state: { projectId: 'b', projects: [{ id: 'b', template: 'blank', baseId: 's', activeId: 's',
+      scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs: { deal: { bidPrice: 2000 } }, empty: encodeEmpty(keep) }] }] }, version: 2 }))
+    const { useStore } = await fresh()
+    const sc = useStore.getState().scenarios[0]
+    expect(sc.inputs.deal.bidPrice).toBe(2000)
+    expect(sc.empty).not.toContain('deal.bidPrice')
+    for (const p of keep) expect(sc.empty).toContain(p)
+    expect(sc.empty).toContain('build.spvManpower')
+    expect(sc.empty).toContain('build.manualPhasing.35')
+    expect(sc.inputs.build.spvManpower).toBe(0) // neutral, not the demo 1.5
+  })
+
+  it('a new blank project has the V16 blank fields empty and the policy fields pre-filled', async () => {
+    const { useStore } = await fresh()
+    useStore.getState().createProject('blank')
+    const s = useStore.getState(), sc = s.scenarios.find(x => x.id === s.activeId)!
+    expect(sc.empty).toContain('build.spvManpower')
+    expect(sc.empty).toContain('build.manualPhasing.0')
+    for (const p of ['stl.pctOfBid', 'funds.fdRate', 'csr.on', 'csr.rate', 'tax.depLifeYears', 'indexation.pim', 'build.flcAnnual', 'build.patrolRentalPerMonth'])
+      expect(sc.empty, p).not.toContain(p)
+    expect(sc.inputs.stl.pctOfBid).toBe(0.1)
+    expect(sc.inputs.indexation.pim).toBe(0.04)
+  })
 })
 

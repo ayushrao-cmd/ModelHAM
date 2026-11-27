@@ -157,8 +157,10 @@ describe('projects', () => {
         scenarios: [{ id: 's', name: 'Base case', updatedAt: 1, inputs, empty: ['deal.bidPrice', 'nope', 'income.spread', 7] }] }] },
       version: 2,
     }))
+    const { V3_BLANK_PATHS } = await import('./projects')
     const m = await fresh()
-    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm'])
+    // v2 save: the v3 blank fields (manual phasing, SPV manpower) are empty too
+    expect(act(m).empty).toEqual(['deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm', ...V3_BLANK_PATHS])
     expect(act(m).inputs.deal.bidPrice).toBe(0)
     expect(act(m).inputs.deal.lengthKm).toBe(0)
     expect(act(m).inputs.deal.buildDays).toBe(DEFAULT_INPUTS.deal.buildDays)
@@ -176,12 +178,12 @@ describe('projects', () => {
     const m = await fresh()
     for (let k = 0; k < 10; k++) m.useStore.getState().createProject('blank')
     const saved = cookies.get(KEY)!
-    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-80')
+    expect(JSON.parse(saved).state.projects[1].scenarios[0].empty).toBe('0-117')
     const { encodeCookie } = await import('../lib/cookies')
     expect(encodeCookie(saved).length).toBeLessThan(4096)
     const b = await fresh()
     expect(b.useStore.getState().projects).toHaveLength(11)
-    expect(act(b).empty).toHaveLength(81)
+    expect(act(b).empty).toHaveLength(118)
   })
 
   it('warns once, suggesting Export, when the saved state grows past about 12 KB', async () => {

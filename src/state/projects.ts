@@ -23,6 +23,8 @@ const startsEmpty = (f: FieldDef) => !f.prefill && f.kind !== 'select' && !f.rea
 const BLANK_FIELDS = FIELDS.filter(startsEmpty)
 export const BLANK_EMPTY: string[] = BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)))
 /** The field each blank leaf belongs to: 'capital.repayment.3' → 'capital.repayment'. */
+/** Blank-class fields added in persist v3: a v2 blank save has no value for them. */
+export const V3_BLANK_PATHS = BLANK_EMPTY.filter(p => under('build.manualPhasing')(p) || under('build.spvManpower')(p))
 export const BLANK_FIELD_OF = new Map(BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).map(p => [p, f.id])))
 export const BLANK_INPUTS: Inputs = BLANK_EMPTY.reduce(
   (i, p) => setAt(i, p, typeof getAt(i, p) === 'string' ? '' : 0), DEFAULT_INPUTS)
@@ -36,6 +38,7 @@ export const TEMPLATES: Record<Template, { inputs: Inputs; empty: string[] }> = 
 /**
  * Empty paths as index ranges into BLANK_EMPTY ("0-80" for a fresh blank project), so a save stays a few bytes.
  * ponytail: indices follow FIELDS order; reordering or adding blank-class fields needs a persist version bump + migrate.
+ * v3 appended build.manualPhasing + build.spvManpower at the end of BLANK_EMPTY (store.ts `migrate` marks them empty for v2 blank saves).
  */
 export function encodeEmpty(empty: string[]): string {
   const has = new Set(empty), idx = BLANK_EMPTY.flatMap((p, i) => (has.has(p) ? [i] : []))

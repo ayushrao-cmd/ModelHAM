@@ -10,7 +10,7 @@ import type { Inputs } from '../engine/types'
 import { FIELDS } from '../fields'
 import { cookies, encodeCookie } from '../lib/cookies'
 import { getAt, setAt } from '../lib/path'
-import { BLANK_EMPTY, BLANK_FIELD_OF, encodeEmpty, neutralise, TEMPLATES, type Template, under, validEmpty } from './projects'
+import { BLANK_EMPTY, BLANK_FIELD_OF, decodeEmpty, encodeEmpty, neutralise, TEMPLATES, type Template, under, V3_BLANK_PATHS, validEmpty } from './projects'
 
 export type { Template } from './projects'
 /** `empty`: leaf paths with no value yet (blank projects); the engine never runs while any remain. */
@@ -290,16 +290,27 @@ export const useStore = create<Store>()(persist((set, get) => {
   }
 }, {
   name: 'milestone.scenarios.v1', // the cookie name predates projects; kept so saves carry over
-  version: 2,
+  version: 3,
   storage: createJSONStorage(() => safeStorage),
   partialize: s => ({
     projectId: s.projectId,
     projects: allProjects(s).map(p => ({ ...p, scenarios: p.scenarios.map(x => ({
       ...x, inputs: savedInputs(p.template, x), empty: encodeEmpty(x.empty) })) })),
   }),
-  // v1 saved one list of scenarios: it becomes the one sample project.
-  migrate: (raw, version) => (version < 2 && isObj(raw)
-    ? { projectId: 'p1', projects: [{ ...raw, id: 'p1', template: 'sample' }] } : raw),
+  // v1 saved one list of scenarios: it becomes the one sample project. v2 blank projects get the v3 blank fields empty.
+  migrate: (raw0, version) => {
+    let raw = raw0
+    if (version < 2 && isObj(raw)) raw = { projectId: 'p1', projects: [{ ...raw, id: 'p1', template: 'sample' }] }
+    if (version < 3 && isObj(raw) && Array.isArray(raw.projects)) raw = { ...raw, projects: raw.projects.map(p => {
+      if (!isObj(p) || p.template !== 'blank' || !Array.isArray(p.scenarios)) return p
+      return { ...p, scenarios: p.scenarios.map(x => {
+        if (!isObj(x)) return x
+        const was = typeof x.empty === 'string' ? decodeEmpty(x.empty) : Array.isArray(x.empty) ? x.empty : []
+        return { ...x, empty: [...was, ...V3_BLANK_PATHS] }
+      }) }
+    }) }
+    return raw
+  },
   // Runs on rehydrate (the brief's onRehydrateStorage step): sanitises before state is set, so no render sees raw storage.
   merge: (persisted, current) => ({ ...current, ...rehydrate(persisted) }),
 }))
