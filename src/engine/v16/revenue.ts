@@ -64,10 +64,10 @@ export function runRevenue(i: Inputs, g: Grid, c: ConstructionResult, earlyDays 
   // DB r82/r83: completion cost % per milestone = increment of the grant thresholds ('CA Set' C20:L20), the
   // completion column N82 = 1 − Σ, each × BPC × PIM at the milestone date (D81 = 1 + r × ROUND(days)/365, the
   // grant index, V16 quirk A-Q6), completion at the construction end N76 = I12. DB!C84 = Σ grant with PIM.
-  // ponytail: a tranche never crossed (NaN date) makes the base NaN; unreachable with phasing summing to 1.
+  // A tranche never crossed (phasing short of it) is indexed at completion: its share is paid with the completion cost.
   let prev = 0, cost = 0
   i.support.tranches.forEach((t, j) => {
-    cost += (t.progress - prev) * bid * idx.grantAt(grant.crossing[j])
+    cost += (t.progress - prev) * bid * idx.grantAt(grant.crossing[j] ?? g.constructionEnd)
     prev = t.progress
   })
   cost += (1 - prev) * bid * idx.grantAt(g.constructionEnd)

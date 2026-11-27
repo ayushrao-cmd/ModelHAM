@@ -49,7 +49,7 @@ for (const set of ['sample', 'epc105', 'bid2400', 'build1460', 'equated']) {
       expectSeries(s.receivedGst, row(set, 'COP-MOF!102'), 0.001, 'grant gst')
       // tranche crossing dates DB!D76:M76 (interpolated, fractional) and amounts DB!D84:M84
       const d76 = row(set, 'DB!76').values.slice(1, 1 + s.crossing.length).map(fromSerial)
-      s.crossing.forEach((c, k) => expectClose(c, d76[k], 1e-6, `crossing ${k + 1}`))
+      s.crossing.forEach((c, k) => expectClose(c!, d76[k], 1e-6, `crossing ${k + 1}`))
       expectSeries(s.amount, { values: row(set, 'DB!84').values.slice(1, 11) }, 1e-9, 'tranche')
     })
 

@@ -216,3 +216,22 @@ describe('v16 model: exports the IndAS statements reuse', () => {
     expect(halfYearlyXirr(h, h.pre)).toBe(c.irr.equityHalfYearlyPre)
   })
 })
+
+describe('v16 model: milestones past the build', () => {
+  /** Every non-finite number in a result, by path (null is an answer: no IRR, no crossing). */
+  const nonFinite = (v: unknown, p = '', out: string[] = []): string[] => {
+    if (typeof v === 'number') { if (!Number.isFinite(v)) out.push(`${p} = ${v}`) }
+    else if (Array.isArray(v)) v.forEach((x, k) => nonFinite(x, `${p}.${k}`, out))
+    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => nonFinite(x, `${p}.${k}`, out))
+    return out
+  }
+  const i = inputsFor('sample')
+  it.each([
+    ['build days 700 with the sample milestones (manual)', { ...i, deal: { ...i.deal, buildDays: 700 } }],
+    ['build days 700 with the sample milestones (Schedule G)', { ...i, deal: { ...i.deal, buildDays: 700 }, build: { ...i.build, phasing: 'scheduleG' as const } }],
+    ['Schedule G with no milestones', { ...i, milestones: [], build: { ...i.build, phasing: 'scheduleG' as const } }],
+    ['Schedule G with a milestone at day 0', { ...i, milestones: [{ day: 0, physical: 0, financial: 0 }, ...i.milestones], build: { ...i.build, phasing: 'scheduleG' as const } }],
+  ])('%s: no NaN or infinity anywhere in the result', (_, x) => {
+    expect(nonFinite(runV16(x)).slice(0, 5)).toEqual([])
+  })
+})

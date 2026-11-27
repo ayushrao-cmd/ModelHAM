@@ -46,9 +46,9 @@ export function capitalisedCost(c: ConstructionResult, g: Grid): CapitalisedCost
   }
   const total = g.periods.map((_, k) => sum(Object.values(lines).map((l) => l[k])))
   const costByFy = toFy(total, ends, g)
-  // 'Fin Set'!C30 = D30 = "Yes": the grant with PIM (DB r84). Unreached tranches carry 0 (and a NaN date).
-  const gr = c.uses.grant, hit = gr.crossing.map((d, j) => (Number.isNaN(d) ? -1 : j)).filter((j) => j >= 0)
-  const grantByFy = toFy(hit.map((j) => gr.amount[j]), hit.map((j) => gr.crossing[j]), g)
+  // 'Fin Set'!C30 = D30 = "Yes": the grant with PIM (DB r84). Unreached tranches carry 0 (and no date).
+  const gr = c.uses.grant, hit = gr.crossing.flatMap((d, j) => (d == null ? [] : [j]))
+  const grantByFy = toFy(hit.map((j) => gr.amount[j]), hit.map((j) => gr.crossing[j]!), g)
   return { lines, total, costByFy, grantByFy, additions: costByFy.map((v, k) => v - grantByFy[k]) }
 }
 

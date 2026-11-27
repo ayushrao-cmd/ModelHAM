@@ -30,8 +30,8 @@ export interface UseLines {
 }
 export interface GrantSchedule {
   /** Per tranche: construction period index of the crossing (0-based; −1 if never reached), interpolated
-   *  crossing day (fractional, DB!D76:M76), amount with PIM (DB r84), its GST, PIM part (DB r86). */
-  month: number[]; crossing: Day[]; amount: number[]; gst: number[]; pim: number[]
+   *  crossing day (fractional, DB!D76:M76; null if never reached), amount with PIM (DB r84), its GST, PIM part (DB r86). */
+  month: number[]; crossing: (Day | null)[]; amount: number[]; gst: number[]; pim: number[]
   /** Per period: grant received (COP-MOF r101 = r210) and GST on it (r102 = r281). */
   received: number[]; receivedGst: number[]
 }
@@ -71,7 +71,8 @@ export function epcPhasing(i: Inputs, g: Grid): number[] {
   const schedG = (t: number) => {
     let d0 = 0, p0 = 0
     for (const m of i.milestones) {
-      if (t <= m.day) return p0 + (m.physical - p0) * (t - d0) / (m.day - d0)
+      // A milestone on (or before) the previous day has no segment to interpolate in: its progress applies from there.
+      if (t <= m.day) return m.day > d0 ? p0 + (m.physical - p0) * (t - d0) / (m.day - d0) : m.physical
       d0 = m.day; p0 = m.physical
     }
     return p0
@@ -91,7 +92,7 @@ export function epcPhasing(i: Inputs, g: Grid): number[] {
 export function grantSchedule(i: Inputs, g: Grid): GrantSchedule {
   const phys = epcPhasing(i, g), t = i.support.tranches
   const base = i.deal.bidPrice * i.support.pctOfBid / t.length // DB r85
-  const month = t.map(() => -1), crossing = t.map(() => NaN)
+  const month = t.map(() => -1), crossing = t.map((): Day | null => null)
   let cum = 0
   g.periods.forEach((p, k) => {
     if (p.kind !== 'construction') return
@@ -101,19 +102,21 @@ export function grantSchedule(i: Inputs, g: Grid): GrantSchedule {
       month[j] = k
       // COP-MOF r199: previous column end + linear interpolation inside the month (fractional day). V16 sums
       // H:AQ (36 columns) into DB!D76; generalised to every construction month.
-      crossing[j] = p.start - 1 + (phys[k] - (cum - tr.progress)) / phys[k] * p.days
+      // A tranche at or below the progress already made (a month with no EPC) crosses at the month's start.
+      crossing[j] = p.start - 1 + (phys[k] > 0 ? (phys[k] - (cum - tr.progress)) / phys[k] * p.days : 0)
     })
   })
   const idx = pim(i, g)
   // DB r84 = BPC × 40%/10 × (1 + PIM × ROUND(days from EOMONTH(bid, −1))/365) (V16 quirk A-Q6, in grantAt).
-  // ponytail: a tranche never reached gets 0 (V16 would index a 0 date); unreachable with phasing summing to 1.
-  const amount = crossing.map((c) => (Number.isNaN(c) ? 0 : base * idx.grantAt(c)))
+  // A tranche never reached (phasing short of it: a short build, milestones past it) gets 0; V16 would index a 0 date.
+  const amount = crossing.map((c) => (c == null ? 0 : base * idx.grantAt(c)))
   const pimPart = amount.map((a) => (a ? a - base : 0))
   const gst = amount.map((a) => a * i.build.gstWorks)
   // r210: tranches whose EOMONTH(crossing) = EOMONTH(period end), while the period starts by DB!M76 (the 10th
   // tranche date; generalised to the last crossing). r281 (GST) matches the month end without that guard.
-  const last = Math.max(...crossing.filter((c) => !Number.isNaN(c)))
-  const inMonth = (end: Day, of: number[]) => sum(of.filter((_, j) => eomonth(crossing[j]) === eomonth(end)))
+  const reached = crossing.filter((c): c is Day => c != null)
+  const last = reached.length ? Math.max(...reached) : -Infinity // none reached: nothing received
+  const inMonth = (end: Day, of: number[]) => sum(of.filter((_, j) => crossing[j] != null && eomonth(crossing[j]!) === eomonth(end)))
   return { month, crossing, amount, gst, pim: pimPart,
     received: g.periods.map((p) => (p.start <= last ? inMonth(p.end, amount) : 0)),
     receivedGst: g.periods.map((p) => inMonth(p.end, gst)) }
@@ -132,7 +135,7 @@ export function stlSchedule(i: Inputs, g: Grid, grant: GrantSchedule): StlSchedu
     const draw = p.end === d1 ? first : p.end === d2 ? total - first : 0
     // r156: 'Fin Set'!C39:L39 (12.5% at milestones 1..8) × total, in the period ending EOMONTH(crossing).
     const repay = sum(grant.crossing.map((c, j) =>
-      j < i.stl.repayMilestones && eomonth(c) === p.end ? i.stl.repayShare * total : 0))
+      j < i.stl.repayMilestones && c != null && eomonth(c) === p.end ? i.stl.repayShare * total : 0))
     const close = open + draw - repay
     // r161: average balance × CP rate (DB!C52) / 365 × construction days (r12; 0 after COD).
     const interest = (open + close) / 2 * i.capital.buildRate / YEAR * (p.kind === 'construction' ? p.days : 0)
@@ -166,7 +169,7 @@ export function constructionUses(i: Inputs, g: Grid, D: number, E: number, psbgR
   const neg = (l: UseLine): UseLine => ({ gross: l.gross.map((v) => -v), gst: l.gst.map((v) => -v) })
 
   // r16: DB r86 (PIM on grant) × (1 + GSTWorks) in the period whose end = EOMONTH(crossing) ('Fin Set'!C30 = "Yes").
-  const pimAt = g.periods.map((p) => sum(grant.pim.filter((_, j) => eomonth(grant.crossing[j]) === p.end)))
+  const pimAt = g.periods.map((p) => sum(grant.pim.filter((_, j) => grant.crossing[j] != null && eomonth(grant.crossing[j]!) === p.end)))
   const epcVariable = line(pimAt, 1, gw)
   const { financeLegal, patrolRental } = derivedCosts(i, g)
 
@@ -175,7 +178,8 @@ export function constructionUses(i: Inputs, g: Grid, D: number, E: number, psbgR
   // V16 quirk A-Q3: the phasing denominator is J14 − AD (no +1), so the phased total is (J14−AD+1)/(J14−AD) × M26.
   const j14 = psbgRelease
   const m26 = b.perfSecurityCommissionPa * b.perfSecurityPctOfBid * bid * (j14 - g.appointed + 1) / YEAR
-  const psbgShare = g.periods.map((p) => (p.start <= j14 ? (Math.min(p.end, j14) - p.start + 1) / (j14 - g.appointed) : 0))
+  // A release on AD itself (J14 − AD = 0) puts the one day's commission in the first month rather than dividing by 0.
+  const psbgShare = g.periods.map((p) => (p.start <= j14 ? (Math.min(p.end, j14) - p.start + 1) / Math.max(j14 - g.appointed, 1) : 0))
 
   // r32 = −r162 (STL interest paid monthly); r37 = r174 = r162, interest on the MA recovered from the EPC
   // contractor back-to-back ('Fin Set'!F33 "Back to Back", H33 "EPC Contractor"), so r32 + r37 = 0.

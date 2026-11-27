@@ -27,9 +27,9 @@ export function cashFlow(x: Ctx, pl: Record<number, Row>): { rows: Row[]; at: Re
     fin(id, label, pl[p].values, n, formula, { num, additive: pl[p].additive,
       children: pl[p].children?.map((ch) => under(id, ch)) })
   const off = (id: string, num: string, n: number, label: string, why: string) => fin(id, label, x.zero(), n, `0: ${why}`, { num })
-  // Grant base and PIM part by tranche date (DB r85, r86); a tranche never reached (NaN date) carries 0.
-  const tranches = (s: number[]) => s.reduce((acc, val, j) => (Number.isNaN(gr.crossing[j]) ? acc
-    : add(acc, x.at(val, gr.crossing[j]))), x.zero())
+  // Grant base and PIM part by tranche date (DB r85, r86); a tranche never reached (no date) carries 0.
+  const tranches = (s: number[]) => s.reduce((acc, val, j) => (gr.crossing[j] == null ? acc
+    : add(acc, x.at(val, gr.crossing[j]!))), x.zero())
   const draws = (construction: boolean) =>
     byPeriod(m.map((p, j) => ((r.grid.periods[j].kind === 'construction') === construction ? p.debtDraw : 0)))
 
