@@ -49,6 +49,9 @@ export interface CashResult {
   irr: { projectPre: number | null; projectPost: number | null; equityAnnualPre: number | null
     equityAnnualPost: number | null; equityHalfYearly: number | null; equityHalfYearlyPre: number | null
     equityMobAdj: number | null; equityMobAdjPre: number | null }
+  /** Consistent alternatives for the method notes: the half-yearly post-tax equity IRR with each FY's inflow that has
+   *  no annuity month end placed on its FY end (B-Q1), and the post-tax project IRR with the DSR transfers (B-Q6). */
+  consistent: { equityHalfYearly: number | null; projectPost: number | null }
 }
 
 /** 'Fin Set'!G61 Half; F42 rounding digits (r193 start test). */
@@ -142,10 +145,12 @@ export function runCash(g: Grid, x: CashInputs): CashResult {
   const equityPre = add(equityOutflow, taxPos, equityInflow), equityPost = add(equityOutflow, equityInflow)
 
   const equityFlows = halfYearly(g, c, rev, equityInflow, taxPos)
-  const from = (s: number[]) => { // r193: XIRR from the first column whose equity outflow rounds to non-zero
-    const j = equityFlows.outflow.findIndex((v) => Math.round(v * 10 ** DIGITS) !== 0)
-    return j < 0 ? null : xirr(s.slice(j).map((amount, k) => ({ day: equityFlows.dates[j + k], amount })))
-  }
+  // r193: XIRR from the first column whose equity outflow rounds to non-zero.
+  const j = equityFlows.outflow.findIndex((v) => Math.round(v * 10 ** DIGITS) !== 0)
+  const dated = (s: number[]) => s.slice(j).map((amount, k) => ({ day: equityFlows.dates[j + k], amount }))
+  const from = (s: number[]) => (j < 0 ? null : xirr(dated(s)))
+  const annuityFys = new Set(rev.dates.map(fyEnd))
+  const dropped = g.fys.map((f, k) => ({ day: f, amount: equityInflow[k] })).filter((x) => !annuityFys.has(x.day) && x.amount)
   return { lines: { ...sources, ...uses }, opening, inflow, outflow, closing, cfads, dscrRows: d, dscr, dscrAvg,
     dscrMin: ratios.length ? Math.min(...ratios) : null, dscrMax: ratios.length ? Math.max(...ratios) : null,
     dscrAvgConsistent,
@@ -155,7 +160,9 @@ export function runCash(g: Grid, x: CashInputs): CashResult {
     equityFlows,
     irr: { projectPre: irr(projectFlows.pre), projectPost: irr(projectFlows.post), equityAnnualPre: irr(equityPre),
       equityAnnualPost: irr(equityPost), equityHalfYearly: from(equityFlows.post), equityHalfYearlyPre: from(equityFlows.pre),
-      equityMobAdj: from(equityFlows.mobPost), equityMobAdjPre: from(equityFlows.mobPre) } }
+      equityMobAdj: from(equityFlows.mobPost), equityMobAdjPre: from(equityFlows.mobPre) },
+    consistent: { equityHalfYearly: j < 0 ? null : xirr([...dated(equityFlows.post), ...dropped]),
+      projectPost: irr(add(projectFlows.post, dsrTransfer)) } }
 }
 
 /** EOMONTH(d, 6) for a month end d. */
@@ -173,7 +180,8 @@ function halfYearly(g: Grid, c: ConstructionResult, rev: RevenueResult, equityIn
   // Bounded: dates strictly increase (each step ≥ 1 month) and stop at N18; the cap guards a non-finite N18.
   for (let n = 0, prev = dates[1]; prev < n18 && n < 12 * 400; n++) {
     const next = eomonth(prev + 1) // G175: EOMONTH(prev, 1) while ≤ K18
-    prev = next <= k18 ? next : prev === k18 ? sixMonthsOn(prev) : Math.min(sixMonthsOn(prev), n18)
+    // G175's K18 branch has no MIN with N18; capped here too (differs only if N18 is < 6 months after K18).
+    prev = next <= k18 ? next : Math.min(sixMonthsOn(prev), n18)
     dates.push(prev)
   }
   const at = new Map(dates.map((x, k) => [x, k])), z = () => dates.map(() => 0)
@@ -182,7 +190,9 @@ function halfYearly(g: Grid, c: ConstructionResult, rev: RevenueResult, equityIn
     const j = at.get(eomonth(g.periods[k].end))
     if (j === undefined) return
     outflow[j] -= m.equityShareCapital + m.equityUsl
-    mobBalance[j] += m.stlBalance // r169 MA to EPC closing = the STL balance (back-to-back)
+    // V16 quirk B-MA-COD: r199 SUMIFs a *balance* (r169 MA to EPC closing = the STL balance, back-to-back) on the month
+    // end, so the COD month adds both periods' balances. 0 at every golden set (the MA is recovered by milestone 8).
+    mobBalance[j] += m.stlBalance
   })
   // r185–r188: annuity month ends on the grid, their FY and the count per FY.
   const annuityEnds = new Set(rev.dates.map(eomonth))

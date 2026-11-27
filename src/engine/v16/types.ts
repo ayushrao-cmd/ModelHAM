@@ -1,4 +1,13 @@
 import type { Day } from '../dates'
+import type { Inputs } from '../types'
+import type { CashResult } from './cash'
+import type { ConstructionResult } from './construction'
+import type { DebtResult } from './debt'
+import type { FundsResult } from './funds'
+import type { GstResult } from './gst'
+import type { OpexResult } from './opex'
+import type { RevenueResult } from './revenue'
+import type { CapitalisedCost, Depreciation, TaxResult } from './tax'
 export type { Day }
 
 /** A COP-MOF column: a calendar-month slice from the appointed date to the 1st annuity (A §1). */
@@ -39,4 +48,23 @@ export interface V16Kpis {
   /** G46 TPC, Σ grant with PIM, D75 debt, D70 equity, debt / equity, Revenue!D14, Σ O&M payments − Σ opex. */
   totalProjectCost: number; grant: number; debt: number; equity: number; leverage: number
   completionBase: number; omMargin: number
+}
+
+/** IGAAP P&L below EBITDA as the KPIs need it (Fin-IGAAP r13, r33–r36, CSR net worth r40 + r42..r46), per FY. The
+ *  statements themselves are built from the result in `statements/igaap.ts`. */
+export interface IgaapProfit { turnover: number[]; pbt: number[]; csr: number[]; pat: number[]; netWorth: number[] }
+
+export interface Loop { converged: boolean; iterations: number }
+
+/** `runV16` (model.ts). */
+export interface V16Result {
+  inputs: Inputs; grid: Grid; construction: ConstructionResult; revenue: RevenueResult; opex: OpexResult
+  debt: DebtResult; funds: FundsResult; gst: GstResult; capitalised: CapitalisedCost; bookDep: Depreciation
+  taxDep: Depreciation & { rate: number }; tax: TaxResult; igaap: IgaapProfit; cash: CashResult
+  kpis: V16Kpis; notes: MethodNote[]
+  /** Every fixed point within tolerance; `iterations` = construction outer + funds ↔ tax passes. */
+  converged: boolean; iterations: number
+  /** Per loop, for Health: construction ↔ interest DSR, funds ↔ tax ↔ cash for DSCR, CSR ↔ PAT (inside the tax loop,
+   *  last pass). */
+  loops: { construction: Loop; tax: Loop; csr: Loop }
 }

@@ -154,6 +154,42 @@ describe('v16 model: sample targets', () => {
     expect(res.iterations).toBeLessThanOrEqual(100) // 50 per loop
   })
 
+  const finite = (res: ReturnType<typeof runV16>) => {
+    for (const [k, v] of Object.entries(res.kpis)) expect(v === null || Number.isFinite(v), k).toBe(true)
+    for (const s of [res.cash.closing, res.cash.cfads, res.tax.tax])
+      expect(s.every(Number.isFinite)).toBe(true)
+  }
+
+  it('reports every loop converged (construction, tax, CSR)', () => {
+    expect(r.loops.construction.converged && r.loops.tax.converged && r.loops.csr.converged).toBe(true)
+    expect(r.loops.csr.iterations).toBeLessThanOrEqual(r.grid.fys.length + 1)
+  })
+
+  it('construction capped at 1 pass: converged false, construction loop false, finite result', () => {
+    const res = runV16(i, { maxConstructionIterations: 1 })
+    expect(res.converged).toBe(false)
+    expect(res.loops.construction).toEqual({ converged: false, iterations: 1 })
+    finite(res)
+  })
+
+  it('funds ↔ tax capped at 1 pass: converged false, tax loop false, finite result', () => {
+    const res = runV16(i, { maxTaxIterations: 1 })
+    expect(res.converged).toBe(false)
+    expect(res.loops.tax).toEqual({ converged: false, iterations: 1 })
+    expect(res.loops.construction.converged).toBe(true)
+    finite(res)
+  })
+
+  it('B-Q1 and B-Q6 notes carry the consistent alternatives', () => {
+    const q1 = r.notes.find((n) => n.id === 'B-Q1')!, q6 = r.notes.find((n) => n.id === 'B-Q6')!
+    expectClose(q1.v16Value!, 0.15091964602470398, IRR, 'Q1 v16')
+    expect(q1.consistentValue! - q1.v16Value!).toBeGreaterThan(0) // the dropped FY30 inflow is positive
+    expect(q1.consistentValue! - q1.v16Value!).toBeLessThan(1e-3)
+    expectClose(q6.v16Value!, 0.10429227047105294, IRR, 'Q6 v16')
+    expect(Number.isFinite(q6.consistentValue!)).toBe(true)
+    expect(r.notes.some((n) => n.id === 'B-MA-COD')).toBe(true)
+  })
+
   it('keeps the invalid-date contract: throws', () => {
     expect(() => runV16({ ...i, deal: { ...i.deal, bidDate: '2026-02-30' } })).toThrow()
   })
