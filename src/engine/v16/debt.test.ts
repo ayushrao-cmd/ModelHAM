@@ -102,4 +102,15 @@ describe('v16 debt: sample targets (B §8)', () => {
     expectClose(mar.repayment, 14.853745897287556, 1e-6, 'repay')
     expectClose(mar.interest, (mar.opening + mar.closing) / 2 * 31 / 365 * 0.095, 1e-12, 'interest')
   })
+
+  it('a repayment schedule longer than the annuities still returns: clamped to the last annuity', () => {
+    const i = inputsFor('sample'), c = runConstruction(i, g, opsFor('sample'))
+    const long = { ...i, capital: { ...i.capital, repayment: Array(2 * i.deal.operateYears + 5).fill(0.02) } }
+    const t = performance.now()
+    const r = runDebt(long, g, c)
+    expect(performance.now() - t).toBeLessThan(200)
+    expect(r.repaymentEnd).toBe(toDay('2045-03-15')) // DB r60's 30th date (EDATE chain, no B-Q14 swap)
+    expect(r.months[r.months.length - 1].end).toBe(r.repaymentEnd)
+    expect(r.interest.every(Number.isFinite)).toBe(true)
+  })
 })

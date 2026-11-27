@@ -52,8 +52,9 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
   for (let d = g.firstAnnuity; d <= eomonth(g.concessionEnd); d = addMonths(d, 6)) db.push(d)
   const rep = i.capital.repayment
   const principal = g.annuities.map((_, n) => (rep[n] ?? 0) * c.debt) // DB r67 = r65 × 'COP-MOF'!D75
-  // DB!U12 = SUMIF(annuity no., '1. IO'!K3, r60); K3 (25) generalised to the schedule's length.
-  const repaymentEnd = db[rep.length - 1]
+  // DB!U12 = SUMIF(annuity no., '1. IO'!K3, r60); K3 (25) generalised to the schedule's length, clamped to the last
+  // annuity (V16 would get U12 = 0 and break) so the month loop below always ends.
+  const repaymentEnd = db[Math.min(rep.length, db.length) - 1]
 
   // Rows 21–34: calendar months from K12 (that day included) to U12.
   // ponytail: r31 additions (COP-MOF draws in a period *starting* on the month start) are 0 unless the 1st annuity is
@@ -85,10 +86,11 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
     addition[k] += m.addition; repayment[k] += m.repayment; interest[k] += m.interest
   }
   const k0 = at.get(fyEnd(g.cod)) ?? g.fys.length
+  const balanceAt = new Map(g.periods.map((p, j) => [p.end, c.months[j].debtBalance]))
   let bal = months[0]?.opening ?? 0
   g.fys.forEach((f, k) => {
     if (k < k0) { // r47: E3 < DB!J16 → SUMIF(COP-MOF r8 period end, FY end, r217)
-      closing[k] = c.months.reduce((a, m, j) => a + (g.periods[j].end === f ? m.debtBalance : 0), 0)
+      closing[k] = balanceAt.get(f) ?? 0
       return
     }
     opening[k] = bal
