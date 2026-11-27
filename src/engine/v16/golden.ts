@@ -1,4 +1,5 @@
-import sample from './golden/sample.json'
+import sample from './golden/sample.json' // tight recalculation of the unchanged workbook
+import sampleCached from './golden/sample-cached.json' // V16's cached values (openpyxl)
 import bid2400 from './golden/bid2400.json'
 import epc105 from './golden/epc105.json'
 import build1460 from './golden/build1460.json'
@@ -13,7 +14,7 @@ export interface GoldenRow {
 /** Differential sets (scripts/v16/run_differential.py): `inputs` are site Inputs paths (incl. V16-derived knock-ons,
  *  see scripts/v16/io_map.json); `patches` are hard-code cells changed in the V16 copy (design §9). */
 export interface Golden {
-  meta: { set: string; inputs: Record<string, number | string>; extracted: string; v16Residual?: number
+  meta: { set: string; inputs: Record<string, number | string>; extracted: string; v16Residual?: number; source?: string
     patches?: { cell: string; old: string; new: string; why: string }[] }
   cells: Record<string, GoldenRow>
   cols: Record<string, (string | null)[]>
@@ -21,7 +22,7 @@ export interface Golden {
 }
 
 const sets: Record<string, Golden> = Object.fromEntries(
-  Object.entries({ sample, bid2400, epc105, build1460, equity30, rates50bp, equated })
+  Object.entries({ sample, sampleCached, bid2400, epc105, build1460, equity30, rates50bp, equated })
     .map(([k, g]) => [k, g as unknown as Golden]))
 
 export const golden = (set: string): Golden => {

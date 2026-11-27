@@ -7,7 +7,8 @@ Works on a temp copy (the original is never saved). Iterative calc on (1000 iter
 CalculateFull repeats until two consecutive passes agree to 1e-9 on every numeric cell of the exported
 sheets (meta.v16Residual = max abs change on the last pass). Values go through extract_golden.export_golden.
 Stops (exit 2) if a pass limit is hit or an exported sheet shows an Excel error the unchanged workbook does not.
-`sample` recalculates the unchanged workbook and compares it to golden/sample.json (harness self-check).
+`sample` writes the tight recalculation of the unchanged, unpatched workbook as golden/sample.json and reports
+its gap to golden/sample-cached.json (V16's cached values, exported by extract_golden.py).
 """
 import datetime as dt
 import json
@@ -123,11 +124,16 @@ def run(xl, src, set_name, io):
                 src_f = book.rng(pt['fillFrom']).FormulaR1C1
                 rows = [x[0] for x in src_f] if isinstance(src_f, tuple) else [src_f]
                 r.FormulaR1C1 = tuple((f,) * r.Columns.Count for f in rows)
-                new = f"fill right of {pt['fillFrom']} (same R1C1 formulas)"
+                # one record per row: `new` = the A1 formula now in the row's first target cell (rest filled right)
+                for i in range(r.Rows.Count):
+                    row = r.Rows(i + 1)
+                    a = row.Address.replace('$', '')
+                    o = old[i] if isinstance(old, tuple) else (old,)
+                    patches.append(dict(cell=f"'{row.Worksheet.Name}'!{a}", old=''.join(o),
+                                        new=row.Cells(1, 1).Formula, why=pt['why']))
             else:
-                r.Formula = new = pt['new']
-            old = old if isinstance(old, str) else ''.join(c for row in old for c in row)
-            patches.append(dict(cell=pt['cell'], old=old, new=new, why=pt['why']))
+                r.Formula = pt['new']
+                patches.append(dict(cell=pt['cell'], old=old, new=pt['new'], why=pt['why']))
         passes, residual = converge(xl, book)
         for p, m in paths.items():  # knock-on values of mapped cells V16 computes itself
             if 'derived' in m:
@@ -181,11 +187,12 @@ def main(argv):
             print(f"{name}: passes {m['passes']}, residual {m['v16Residual']:.3g}, inputs {m['inputs']}, "
                   f"patches {len(m.get('patches', []))}, equityIrr {g['kpis']['equityIrrHalfYearly']}")
             if name == 'sample':
-                ref = json.load(open(os.path.join(GOLDEN, 'sample.json'), encoding='utf-8'))
+                m['source'] = 'tight recalculation of the unchanged workbook'
+                ref = json.load(open(os.path.join(GOLDEN, 'sample-cached.json'), encoding='utf-8'))
                 worst, where, only = compare(g, ref)
-                print(f'  vs sample.json: max |diff| {worst:.3g} at {where}; cells in one only: {len(only)} {only[:10]}')
-                print(f"  layout COM {m['layout']}\n  layout xlsx {ref['meta']['layout']}")
-                continue
+                print(f'  vs sample-cached.json: max |diff| {worst:.3g} at {where}; cells in one only: {len(only)} {only[:10]}')
+                if m['layout'] != ref['meta']['layout']:
+                    raise RuntimeError(f"layout differs from the cached export: {m['layout']} vs {ref['meta']['layout']}")
             out = os.path.join(out_dir, f'{name}.json')
             with open(out, 'w', encoding='utf-8') as f:
                 json.dump(g, f, separators=(',', ':'), ensure_ascii=False)
