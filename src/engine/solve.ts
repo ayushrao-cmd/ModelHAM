@@ -7,7 +7,7 @@ export type SolveResult =
   | { ok: true; bidPrice: number; equityIrr: number; runs: number }
   | { ok: false; reason: string; runs: number }
 
-const MAX_RUNS = 40        // hard cap on runModel calls, including range-end evaluations
+const MAX_RUNS = 40        // hard cap on runModel calls (~10 ms each), including range-end evaluations
 const BID_TOL = 0.01       // stop when the bid interval is narrower than ₹0.01 Cr
 const IRR_TOL = 1e-6       // ...or the equity IRR is within 1e-6 of target
 const RANGE_LO = 0.5       // default search range: 0.5x current bid

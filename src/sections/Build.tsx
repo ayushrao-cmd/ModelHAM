@@ -1,3 +1,4 @@
+import { costLines } from '../charts/data'
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
 import { fmt } from '../lib/format'
@@ -8,21 +9,20 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 
 function BuildResults() {
   const r = useResult()
-  const b = r.build
-  const net = sum(b.uses.map(u => u.net)), gst = sum(b.uses.map(u => u.gst))
-  const epc = b.uses.filter(u => u.key.startsWith('epc')).reduce((a, u) => a + u.net + u.gst, 0)
+  const rows = costLines(r), tpc = r.kpis.totalProjectCost
+  const gst = sum(rows.map(u => u.gst))
+  const epc = sum(rows.filter(u => u.key.startsWith('epc')).map(u => u.gross))
   return <>
     <Stats items={[
-      { label: 'Total project cost', value: fmt.cr(b.totalUses), sub: 'All build-period uses incl. GST' },
-      { label: 'EPC incl. GST', value: fmt.cr(epc), sub: `${fmt.pct(epc / b.totalUses)} of total cost` },
-      { label: 'Net GST credit', value: fmt.cr(b.netGstCredit),
-        sub: 'Recovered from Completion Payments' },
+      { label: 'Total project cost', value: fmt.cr(tpc), sub: 'Build and COD to first annuity, incl. GST' },
+      { label: 'EPC incl. GST', value: fmt.cr(epc), sub: `${fmt.pct(epc / tpc)} of total cost` },
+      { label: 'GST input credit', value: fmt.cr(gst), sub: 'Set off against output GST' },
     ]} />
     <Panel>
-      <DataTable title="Uses of funds" description="₹ Cr, build period"
+      <DataTable title="Uses of funds" description="₹ Cr, build period and COD to the first annuity. Patrol rental and finance & legal follow from the build days."
         columns={[{ label: 'Use' }, { label: 'Net' }, { label: 'GST' }, { label: 'Total' }, { label: 'Share', format: n => fmt.pct(n) }]}
-        rows={b.uses.map(u => [u.label, u.net, u.gst, u.net + u.gst, (u.net + u.gst) / b.totalUses])}
-        total={['Total', net, gst, b.totalUses, 1]} />
+        rows={rows.map(u => [u.label, u.gross - u.gst, u.gst, u.gross, u.gross / tpc])}
+        total={['Total', tpc - gst, gst, tpc, 1]} />
     </Panel>
   </>
 }

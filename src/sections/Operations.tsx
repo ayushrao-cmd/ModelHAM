@@ -1,40 +1,36 @@
 import { DataTable } from '../components/DataTable'
 import { InputGroup } from '../components/InputGroup'
-import { opexForYear } from '../engine/operations'
+import type { OpexHead } from '../engine/v16/opex'
 import { fmt } from '../lib/format'
 import { useModel, useResult } from '../state/useModel'
 import { CheckCard, Panel, SectionLayout, Stats } from './SectionLayout'
 
-const LINES = [
-  ['routine', 'Routine maintenance'], ['majorMaintenance', 'Major maintenance'], ['staff', 'Staff'], ['electricity', 'Electricity'],
-  ['insurance', 'Insurance'], ['ieFee', 'Independent Engineer fee'], ['patrolRunning', 'Patrol running'], ['financeLegal', 'Finance & legal'],
-] as const
+const LINES: [OpexHead, string][] = [
+  ['routineMaintenance', 'Routine maintenance'], ['majorMaintenance', 'Major maintenance'], ['spvManpower', 'SPV staff'],
+  ['electricity', 'Electricity'], ['insurance', 'Insurance'], ['ieFee', 'Independent Engineer fee'],
+  ['spvOverhead', 'Patrol running and SPV overhead'], ['financeLegal', 'Finance & legal'],
+]
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 
 function OperationsResults() {
   const r = useResult()
   const { checks } = useModel()
-  const i = r.inputs, epcNet = i.build.epcFixed + r.build.epcVariable
-  // Annual opex = the two half-year periods of each operating year, each costed at its payment date (as the engine does).
-  const years = Array.from({ length: i.deal.operateYears }, (_, k) => r.ops.filter(p => p.year === k + 1)
-    .map(p => opexForYear(i, p.year, p.day, epcNet))
-    .reduce((acc, o) => Object.fromEntries(LINES.map(([key]) => [key, (acc[key] ?? 0) + o[key] / 2])) as Record<string, number>, {} as Record<string, number>))
-  const lineTotal = (key: string) => sum(years.map(y => y[key] ?? 0))
-  const yearTotal = (y: Record<string, number>) => sum(LINES.map(([key]) => y[key] ?? 0))
-  const total = sum(years.map(yearTotal))
-  const tx = i.tax, taxRate = tx.baseRate * (1 + tx.surcharge) * (1 + tx.cess)
+  const o = r.opex, i = r.inputs
+  // Financial years with operating costs (COD year to the concession end), each cost split into FYs by the original.
+  const years = r.grid.fys.flatMap((_, k) => (o.total[k] > 0 ? [k] : []))
+  const total = sum(o.total), first = years.length > 1 ? years[1] : years[0]
   return <>
     <Stats items={[
-      { label: 'Operating costs', value: fmt.cr(total), sub: `Over ${i.deal.operateYears} years, inflated` },
-      { label: 'First-year costs', value: fmt.cr(years[0] ? yearTotal(years[0]) : null), sub: 'Operating year 1' },
-      { label: 'Effective tax rate', value: fmt.pct(taxRate), sub: 'Base rate with surcharge and cess' },
+      { label: 'Operating costs', value: fmt.cr(total), sub: `Over ${i.deal.operateYears} years, inflated, ex GST` },
+      { label: 'First full-year costs', value: fmt.cr(first == null ? null : o.total[first]), sub: first == null ? undefined : fmt.fy(r.grid.fys[first]) },
+      { label: 'Effective tax rate', value: fmt.pct(r.tax.rate), sub: 'Base rate with surcharge and cess' },
     ]} />
     <CheckCard check={checks.find(c => c.id === 'om-margin')} value={fmt.cr(r.kpis.omMargin)} />
     <Panel>
-      <DataTable title="Operating costs by year" description="₹ Cr per operating year; scroll sideways for later years"
-        columns={[{ label: 'Cost line' }, ...years.map((_, k) => ({ label: `Y${k + 1}` })), { label: 'Total' }]}
-        rows={LINES.map(([key, label]) => [label, ...years.map(y => y[key] ?? 0), lineTotal(key)])}
-        total={['Total', ...years.map(yearTotal), total]} />
+      <DataTable title="Operating costs by financial year" description="₹ Cr, ex GST, per FY ending 31 March; scroll sideways for later years"
+        columns={[{ label: 'Cost line' }, ...years.map(k => ({ label: fmt.fy(r.grid.fys[k]) })), { label: 'Total' }]}
+        rows={LINES.map(([key, label]) => [label, ...years.map(k => o[key][k]), sum(o[key])])}
+        total={['Total', ...years.map(k => o.total[k]), total]} />
     </Panel>
   </>
 }

@@ -1,5 +1,5 @@
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts'
-import type { PhasingRow } from '../engine/statements'
+import type { PhasingRow } from './data'
 import { fmt } from '../lib/format'
 import { ChartFrame, ChartTooltip, useReducedMotion } from './ChartFrame'
 import { sCurveData } from './data'

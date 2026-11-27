@@ -10,7 +10,7 @@ import type { Inputs } from '../engine/types'
 import { FIELDS } from '../fields'
 import { cookies, encodeCookie } from '../lib/cookies'
 import { getAt, setAt } from '../lib/path'
-import { BLANK_EMPTY, BLANK_FIELD_OF, decodeEmpty, encodeEmpty, neutralise, TEMPLATES, type Template, under, V3_BLANK_PATHS, validEmpty } from './projects'
+import { BLANK_EMPTY, BLANK_EMPTY_V3, BLANK_FIELD_OF, decodeEmpty, encodeEmpty, neutralise, TEMPLATES, type Template, under, V3_BLANK_PATHS, validEmpty } from './projects'
 
 export type { Template } from './projects'
 /** `empty`: leaf paths with no value yet (blank projects); the engine never runs while any remain. */
@@ -89,6 +89,12 @@ export function sanitize(raw: unknown, template: Template, rawEmpty: unknown): {
   m = setAt(m, 'deal.operateYears', DEFAULT_INPUTS.deal.operateYears) // fixed at 15 by the concession agreement
   const list = BLANK_EMPTY.filter(p => empty.has(p))
   return { inputs: neutralise(m, list), empty: list }
+}
+
+/** Raw saved or imported inputs from before persist v4: the 'sCurve' phasing option is now V16's 'scheduleG'. */
+export function upgradeInputs(raw: unknown): unknown {
+  if (!isObj(raw) || !isObj(raw.build) || raw.build.phasing !== 'sCurve') return raw
+  return { ...raw, build: { ...raw.build, phasing: 'scheduleG' } }
 }
 
 export const mergeWithDefaults = (raw: unknown): Inputs => sanitize(raw, 'sample', []).inputs
@@ -246,7 +252,7 @@ export const useStore = create<Store>()(persist((set, get) => {
       if (!INPUT_KEYS.some(k => k in inputs))
         return { ok: false, error: `That file is not a scenario: it has none of the model's sections (${INPUT_KEYS.join(', ')}).` }
       // A file without `empty` (an older export) is complete where it has values; in a blank project sanitize leaves the rest empty.
-      const s = sanitize(inputs, activeTemplate(get()), isScenario ? raw.empty : [])
+      const s = sanitize(upgradeInputs(inputs), activeTemplate(get()), isScenario ? raw.empty : [])
       const id = add(isScenario && typeof raw.name === 'string' ? raw.name : 'Imported scenario', s.inputs, s.empty)
       set({ activeId: id })
       return { ok: true }
@@ -290,7 +296,7 @@ export const useStore = create<Store>()(persist((set, get) => {
   }
 }, {
   name: 'milestone.scenarios.v1', // the cookie name predates projects; kept so saves carry over
-  version: 3,
+  version: 4,
   storage: createJSONStorage(() => safeStorage),
   partialize: s => ({
     projectId: s.projectId,
@@ -298,15 +304,19 @@ export const useStore = create<Store>()(persist((set, get) => {
       ...x, inputs: savedInputs(p.template, x), empty: encodeEmpty(x.empty) })) })),
   }),
   // v1 saved one list of scenarios: it becomes the one sample project. v2 blank projects get the v3 blank fields empty.
+  // v4: blank saves' empty ranges were indexed by the v3 list (v2's is its prefix), so they are decoded with it into
+  // paths (the hidden fields drop out in sanitize); the 'sCurve' phasing option is now 'scheduleG'.
   migrate: (raw0, version) => {
     let raw = raw0
     if (version < 2 && isObj(raw)) raw = { projectId: 'p1', projects: [{ ...raw, id: 'p1', template: 'sample' }] }
-    if (version < 3 && isObj(raw) && Array.isArray(raw.projects)) raw = { ...raw, projects: raw.projects.map(p => {
-      if (!isObj(p) || p.template !== 'blank' || !Array.isArray(p.scenarios)) return p
+    if (version < 4 && isObj(raw) && Array.isArray(raw.projects)) raw = { ...raw, projects: raw.projects.map(p => {
+      if (!isObj(p) || !Array.isArray(p.scenarios)) return p
       return { ...p, scenarios: p.scenarios.map(x => {
         if (!isObj(x)) return x
-        const was = typeof x.empty === 'string' ? decodeEmpty(x.empty) : Array.isArray(x.empty) ? x.empty : []
-        return { ...x, empty: [...was, ...V3_BLANK_PATHS] }
+        const inputs = upgradeInputs(x.inputs)
+        if (p.template !== 'blank') return { ...x, inputs }
+        const was = typeof x.empty === 'string' ? decodeEmpty(x.empty, BLANK_EMPTY_V3) : Array.isArray(x.empty) ? x.empty : []
+        return { ...x, inputs, empty: version < 3 ? [...was, ...V3_BLANK_PATHS] : was }
       }) }
     }) }
     return raw

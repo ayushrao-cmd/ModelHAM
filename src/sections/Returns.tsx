@@ -18,6 +18,15 @@ const METRICS: Record<Metric, { label: string; get(r: ModelResult): number | nul
   dscrMin: { label: 'Min DSCR', get: r => r.kpis.dscrMin, format: fmt.x },
 }
 
+/** Every IRR the original reports (Fin-IGAAP IRR block), headline first. */
+export const IRRS: [string, (x: ModelResult) => number | null][] = [
+  ['Equity, post-tax (half-yearly)', x => x.kpis.equityIrr], ['Equity, pre-tax (half-yearly)', x => x.kpis.equityIrrPre],
+  ['Equity, post-tax (annual)', x => x.kpis.equityIrrAnnualPost], ['Equity, pre-tax (annual)', x => x.kpis.equityIrrAnnualPre],
+  ['Equity, post-tax, mobilisation-advance adjusted', x => x.kpis.equityIrrMobAdj],
+  ['Equity, pre-tax, mobilisation-advance adjusted', x => x.cash.irr.equityMobAdjPre],
+  ['Project, pre-tax (annual)', x => x.kpis.projectIrrPre], ['Project, post-tax (annual)', x => x.kpis.projectIrrPost],
+]
+
 /** IRR table; the Base column only when another scenario is active and the base is complete. */
 function IrrTable() {
   const r = useResult()
@@ -25,13 +34,11 @@ function IrrTable() {
   const isBase = useStore(s => s.activeId === s.baseId)
   const showBase = !isBase && base
   const irr = (n: number | null) => n ?? '—'
-  const rows: [string, (x: ModelResult) => number | null][] = [
-    ['Project pre-tax', x => x.kpis.projectIrrPre], ['Project post-tax', x => x.kpis.projectIrrPost], ['Equity', x => x.kpis.equityIrr]]
   return (
     <Panel>
-      <DataTable title="Internal rates of return" description="XIRR on dated cash flows: project flows before and after tax, and equity draws against equity cash."
+      <DataTable title="Internal rates of return" description="As the original workbook: project IRRs on annual flows; the headline equity IRR on half-yearly annuity dates (XIRR). A dash: no IRR exists for these flows."
         columns={[{ label: 'Return' }, { label: 'IRR', format: n => fmt.pct(n) }, ...(showBase ? [{ label: 'Base', format: (n: number) => fmt.pct(n) }] : [])]}
-        rows={rows.map(([l, f]) => [l, irr(f(r)), ...(showBase ? [irr(f(showBase))] : [])])} />
+        rows={IRRS.map(([l, f]) => [l, irr(f(r)), ...(showBase ? [irr(f(showBase))] : [])])} />
     </Panel>
   )
 }

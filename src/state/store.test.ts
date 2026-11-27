@@ -80,7 +80,7 @@ describe('mergeWithDefaults: dates, selects and fixed values', () => {
     const m = mergeWithDefaults({ deal: { pavement: 'gravel' }, build: { phasing: 'random' } })
     expect(m.deal.pavement).toBe(DEFAULT_INPUTS.deal.pavement)
     expect(m.build.phasing).toBe(DEFAULT_INPUTS.build.phasing)
-    expect(mergeWithDefaults({ build: { phasing: 'sCurve' } }).build.phasing).toBe('sCurve')
+    expect(mergeWithDefaults({ build: { phasing: 'scheduleG' } }).build.phasing).toBe('scheduleG')
   })
   it('forces Operate Years to 15', async () => {
     const { mergeWithDefaults } = await fresh()

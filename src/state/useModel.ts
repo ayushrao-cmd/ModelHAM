@@ -1,21 +1,29 @@
 // Engine results for the active and base scenarios, recomputed only when an Inputs object changes identity.
-// The engine never runs on an incomplete scenario: its result is null and its checks are the Required checks.
+// The engine never runs on an incomplete scenario, nor on one it cannot place in time (an invalid bid date): its result
+// is null and its checks are the Required checks, or the blocking ones.
 import { useMemo } from 'react'
-import { healthScore, runChecks, type Check } from '../engine/health'
+import { blockingChecks, healthScore, modelRunCheck, runChecks, type Check } from '../engine/health'
 import { runModel, type ModelResult } from '../engine/model'
 import type { Inputs } from '../engine/types'
 import { type Missing, missingOf, requiredChecks } from './projects'
 import { type Scenario, useStore } from './store'
 
+interface Run { result: ModelResult | null; blocked: Check[] }
 // Shared across every component that calls useModel (per-component useMemo alone would rerun the engine per caller).
-const results = new WeakMap<Inputs, ModelResult>()
-const resultOf = (i: Inputs) => {
-  let r = results.get(i)
-  if (!r) { r = runModel(i); results.set(i, r) }
+const runs = new WeakMap<Inputs, Run>()
+function runOf(i: Inputs): Run {
+  let r = runs.get(i)
+  if (!r) {
+    const blocked = blockingChecks(i)
+    // The engine throws on dates it cannot place; that must never reach React (it would show the Recover screen).
+    if (blocked.length) r = { result: null, blocked }
+    else try { r = { result: runModel(i), blocked: [] } } catch (e) { r = { result: null, blocked: [modelRunCheck(e)] } }
+    runs.set(i, r)
+  }
   return r
 }
-/** The engine result for a scenario, or null while it has empty fields. */
-export const resultFor = (s: Pick<Scenario, 'inputs' | 'empty'>) => (s.empty.length ? null : resultOf(s.inputs))
+/** The engine result for a scenario, or null while it has empty fields or a blocking error. */
+export const resultFor = (s: Pick<Scenario, 'inputs' | 'empty'>) => (s.empty.length ? null : runOf(s.inputs).result)
 const checks = new WeakMap<ModelResult, Check[]>()
 const checksFor = (r: ModelResult) => {
   let c = checks.get(r)
@@ -25,6 +33,8 @@ const checksFor = (r: ModelResult) => {
 
 export interface Model {
   active: ModelResult | null; base: ModelResult | null; checks: Check[]; score: ReturnType<typeof healthScore>; missing: Missing
+  /** Why a complete scenario has no result (invalid dates): shown instead of results. */
+  blocked: Check[]
 }
 
 type St = ReturnType<typeof useStore.getState>
@@ -38,8 +48,9 @@ export function useModel(): Model {
   return useMemo(() => {
     const missing = missingOf(activeEmpty)
     const active = resultFor({ inputs: activeInputs, empty: activeEmpty })
-    const c = active ? checksFor(active) : requiredChecks(missing)
-    return { active, base: resultFor({ inputs: baseInputs, empty: baseEmpty }), checks: c, score: healthScore(c), missing }
+    const blocked = activeEmpty.length ? [] : runOf(activeInputs).blocked
+    const c = active ? checksFor(active) : [...requiredChecks(missing), ...blocked]
+    return { active, base: resultFor({ inputs: baseInputs, empty: baseEmpty }), checks: c, score: healthScore(c), missing, blocked }
   }, [activeInputs, activeEmpty, baseInputs, baseEmpty])
 }
 

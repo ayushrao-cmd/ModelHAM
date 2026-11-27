@@ -19,11 +19,15 @@ beforeEach(() => { useStore.setState(useStore.getInitialState(), true); window.l
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Overview', () => {
-  it('shows the calibrated equity IRR at defaults and no delta while the base is active', () => {
+  it("shows the original workbook's headline numbers at the sample, and no delta while the base is active", () => {
     wrap(<Overview />)
-    const tile = screen.getByRole('group', { name: /^Equity IRR/ })
-    expect(tile.textContent).toMatch(/1[3-7]\.\d{2}%/)
-    expect(tile.textContent).not.toMatch(/vs base/)
+    const tile = (name: RegExp) => screen.getByRole('group', { name }).textContent
+    expect(tile(/^Equity IRR/)).toContain('15.09%') // half-yearly XIRR
+    expect(tile(/^Project IRR, pre-tax/)).toContain('11.76%') // annual
+    expect(tile(/^Project IRR, post-tax/)).toContain('10.43%')
+    expect(tile(/^Min DSCR/)).toContain('1.20×')
+    expect(tile(/^Avg DSCR/)).toContain('1.47×')
+    expect(tile(/^Equity IRR/)).not.toMatch(/vs base/)
   })
 
   it('shows a delta against the base once another scenario is active', () => {
@@ -48,9 +52,18 @@ describe('Overview', () => {
 })
 
 describe('Returns', () => {
-  it('renders the IRR table, charts and the Targets inputs', () => {
+  it('renders the IRR table with every IRR the original reports, charts and the Targets inputs', () => {
     const { container } = wrap(<Returns />)
-    expect(screen.getByRole('rowheader', { name: 'Equity' })).toBeTruthy()
+    const irr = (name: string) => screen.getByRole('rowheader', { name }).parentElement!.textContent
+    expect(irr('Equity, post-tax (half-yearly)')).toContain('15.09%')
+    expect(irr('Equity, pre-tax (half-yearly)')).toContain('18.32%')
+    expect(irr('Equity, post-tax (annual)')).toContain('15.48%')
+    expect(irr('Equity, pre-tax (annual)')).toContain('18.81%')
+    expect(irr('Equity, post-tax, mobilisation-advance adjusted')).toContain('16.74%')
+    expect(irr('Equity, pre-tax, mobilisation-advance adjusted')).toContain('20.49%')
+    expect(irr('Project, pre-tax (annual)')).toContain('11.76%')
+    expect(irr('Project, post-tax (annual)')).toContain('10.43%')
+    expect(screen.getByLabelText('Debt service coverage ratio (DSCR), by financial year')).toBeTruthy()
     expect(screen.getByLabelText('Equity IRR Hurdle')).toBeTruthy()
     expect(container.querySelectorAll('figure').length).toBeGreaterThanOrEqual(3)
     expect(container.textContent).not.toMatch(/NaN|undefined/)
@@ -68,6 +81,15 @@ describe('Health', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Passed/ }))
     expect(items().length).toBeGreaterThan(0)
     expect(items().every(li => li.textContent!.startsWith('Passed'))).toBe(true)
+  })
+
+  it('lists the method notes in their own group, reachable as ?section=notes', () => {
+    window.location.hash = '#/health?section=notes'
+    wrap(<Health />)
+    const notes = screen.getByRole('region', { name: 'Method notes' })
+    expect(within(notes).getAllByRole('listitem').length).toBeGreaterThanOrEqual(8)
+    expect(notes.textContent).toMatch(/Method note B-Q5.*original 1\.47×/)
+    expect(screen.queryAllByRole('region', { name: /checks$/ })).toHaveLength(0)
   })
 
   it('summarises flipped checks in one line', () => {

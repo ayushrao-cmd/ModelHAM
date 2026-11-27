@@ -1,11 +1,20 @@
 import { cn } from '@/lib/utils'
 import { toIso } from '../engine/dates'
-import type { Timeline as T } from '../engine/timeline'
+import type { Day } from '../engine/dates'
+import type { ModelResult } from '../engine/model'
 import { fmt } from '../lib/format'
 
-const EVENTS: { key: keyof Omit<T, 'months' | 'payments'>; label: string }[] = [
+/** Deal dates: completion is the COD, first payment the 1st annuity, end the concession end. */
+export interface DealDates { bid: Day; award: Day; agreement: Day; start: Day; completion: Day; firstPayment: Day; end: Day }
+export function dealDates(r: ModelResult): DealDates {
+  const { grid: g, inputs: { deal } } = r, award = g.bid + deal.daysToAward
+  return { bid: g.bid, award, agreement: award + deal.daysToAgreement, start: g.appointed, completion: g.cod,
+    firstPayment: g.firstAnnuity, end: g.concessionEnd }
+}
+
+const EVENTS: { key: keyof DealDates; label: string }[] = [
   { key: 'bid', label: 'Bid' }, { key: 'award', label: 'Award' }, { key: 'agreement', label: 'Agreement' },
-  { key: 'start', label: 'Start' }, { key: 'completion', label: 'Completion' }, { key: 'firstPayment', label: 'First payment' },
+  { key: 'start', label: 'Start' }, { key: 'completion', label: 'COD' }, { key: 'firstPayment', label: 'First payment' },
   { key: 'end', label: 'End' },
 ]
 const DAYS_PER_MONTH = 365.25 / 12
@@ -18,7 +27,7 @@ function gap(days: number) {
 }
 
 /** Deal timeline strip: bid → end with dates and the gap to the next event. Vertical on mobile, horizontal from md. */
-export function Timeline({ timeline: t }: { timeline: T }) {
+export function Timeline({ timeline: t }: { timeline: DealDates }) {
   return (
     <figure aria-label="Deal timeline" className="m-0">
       <ol className="flex flex-col md:flex-row md:pt-7">

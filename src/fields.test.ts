@@ -44,6 +44,10 @@ describe('field registry', () => {
   it('field order is fixed: saved blank-project data encodes empty fields by FIELDS index', () => {
     expect(FIELDS.map(x => x.id)).toEqual(['deal.projectName', 'deal.authorityName', 'deal.bidPrice', 'deal.authorityEstimate', 'deal.lengthKm', 'deal.bidDate', 'deal.daysToAward', 'deal.daysToAgreement', 'deal.daysToStart', 'deal.buildDays', 'deal.operateYears', 'deal.pavement', 'milestones', 'build.epcFixed', 'build.gstWorks', 'build.gstServices', 'build.ieFeePctOfBid', 'build.adminPctOfEpc', 'build.fundRaisingPctOfDebt', 'build.financeLegal', 'build.contingency', 'build.preBid', 'build.preBidMiscPct', 'build.spvFormationPctOfShareCapital', 'build.patrolCapital', 'build.patrolRental', 'build.perfSecurityPctOfBid', 'build.perfSecurityCommissionPa', 'build.phasing', 'support.pctOfBid', 'support.tranches', 'capital.equityPct', 'capital.upfrontEquityPct', 'capital.shareCapitalPct', 'capital.buildRate', 'capital.operateRate', 'capital.repayment', 'capital.maxLeverage', 'capital.dscrWarn', 'income.completionPctOfBid', 'income.installments', 'income.firstPaymentLagDays', 'income.bankRates', 'income.spread', 'income.rateQuoteDate', 'income.maxQuoteAgeMonths', 'income.omBaseRate', 'income.omResurfacingRate', 'income.omPreResurfacingFlexible', 'income.omPreResurfacingPerpetual', 'indexation.wpi', 'indexation.cpi', 'indexation.wpiWeight', 'operations.routine', 'operations.electricity', 'operations.financeLegal', 'operations.staff', 'operations.patrolRunning', 'operations.ieFee', 'operations.insuranceBaseRate', 'operations.insuranceLoading', 'operations.majorMaintenance', 'operations.resurfacingYears', 'operations.inflation.maintenance', 'operations.inflation.staff', 'operations.inflation.electricity', 'operations.inflation.insurance', 'tax.baseRate', 'tax.surcharge', 'tax.cess', 'targets.equityIrrHurdle', 'support.lagDays', 'stl.pctOfBid', 'funds.fdRate', 'funds.ffeDays', 'funds.mmrShare', 'funds.mmrYears', 'funds.dsrInterestMonths', 'csr.on', 'csr.rate', 'tax.depLifeYears', 'build.manualPhasing', 'build.spvManpower', 'indexation.pim', 'build.patrolRentalPerMonth', 'build.flcOneOff', 'build.flcAnnual', 'stl.option', 'stl.repayShare', 'stl.repayMilestones', 'funds.dsrPrincipalInstalments', 'csr.netWorth', 'csr.turnover', 'csr.profit'])
   })
+  it('hides exactly the inputs the original-method engine does not read', () => {
+    expect(FIELDS.filter(f => f.hidden).map(f => f.id)).toEqual(['build.financeLegal', 'build.patrolRental', 'indexation.wpi',
+      'indexation.cpi', 'indexation.wpiWeight', 'support.lagDays', 'funds.ffeDays'])
+  })
   it('section/group layout is exactly as specified', () => {
     const pairs = [...new Set(FIELDS.map(x => x.section + '/' + x.group))].sort()
     expect(pairs).toEqual([
@@ -66,6 +70,6 @@ describe('field registry', () => {
     expect(V16_SAMPLE.build.preBid).toBe(0.290409)
     expect(DEFAULT_INPUTS.build.patrolRentalPerMonth * 12 * 1095 / 365).toBeCloseTo(DEFAULT_INPUTS.build.patrolRental, 12)
     expect(DEFAULT_INPUTS.build.flcOneOff + 3 * DEFAULT_INPUTS.build.flcAnnual + 0.41 + 0.08).toBeCloseTo(DEFAULT_INPUTS.build.financeLegal, 12)
-    expect(fieldById('build.phasing')?.options?.map(o => o.value)).toEqual(['manual', 'equated', 'sCurve'])
+    expect(fieldById('build.phasing')?.options?.map(o => [o.value, o.label])).toEqual([['manual', 'Manual monthly %'], ['equated', 'Equated monthly'], ['scheduleG', 'Schedule G']])
   })
 })

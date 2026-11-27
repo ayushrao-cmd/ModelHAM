@@ -39,6 +39,18 @@ describe('gating', () => {
     expect(m.checks.some(c => c.id === 'financing-tieup')).toBe(false)
   })
 
+  it('an invalid bid date (the engine would throw) gives no result and a blocking check, never a crash', () => {
+    useStore.getState().setInput('deal.bidDate', '2026-02-30')
+    const { result } = renderHook(() => useModel())
+    expect(result.current.active).toBeNull()
+    expect(result.current.missing.paths).toEqual([])
+    expect(result.current.checks.map(c => c.id)).toEqual(['field:deal.bidDate'])
+    expect(result.current.score.errors).toBe(1)
+    wrap(<ResultsGate><Results /></ResultsGate>)
+    expect(screen.getByRole('alert').textContent).toMatch(/can't run on these inputs.*Bid Date must be a valid date/)
+    expect(screen.getByRole('button', { name: 'Go to Bid Date' })).toBeTruthy()
+  })
+
   it('filling the last field makes results appear', () => {
     useStore.getState().createProject('blank')
     const { result } = renderHook(() => useModel())
