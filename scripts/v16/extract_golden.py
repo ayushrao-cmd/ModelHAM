@@ -2,19 +2,23 @@
 
 Usage: extract_golden.py <v16.xlsx> <out.json>   (or V16_PATH env for the workbook)
 
-Importable: export_golden(get, set_name, inputs) where get(sheet, row, col) -> raw cell value
-(1-based row/col; datetime / number / str / None). Excel-COM readers can reuse it.
+Importable: export_golden(get, extent, set_name, inputs): get(sheet, row, col) -> raw cell value
+(1-based; datetime / number / str / None), extent(sheet) -> (max_row, max_col). Excel-COM readers can reuse it.
 
-Layout per sheet (values[i] is column first+i; date rows give cols[sheet] / cols["sheet#row"]):
-  Fin-IGAAP  label C|B|A, total D, values E..W,   dates row 3
-  Fin-INDAS  label C|B|A, total D, values E..W,   dates row 3
-  COP-MOF    label C,     total G, values H..BO,  dates row 9 (month end); "#11" = FY end
-  Revenue    label C,     total D, values F..AS,  dates row 5 (month end); "#4" = payment date
-  Debt       label B,     total C, values D..ER,  dates row 23 (1st annuity-end block); "#7" = COD block
-  O&M Cost   label D|C,   total I, values J..BQ,  dates row 11
-  Inflation  label B,     none,    values D..AK,  dates row 9; "#12" = FY row of the rate table
-  DB         label B,     total C, values D..AM,  dates row 60 (annuities); "#63" FY; "#91" MMR FY
-             rows 11-19 (key dates), 39-67, 83-106; date cells in data rows become Excel serials.
+Layout per sheet (all non-empty rows; values[i] is column first+i, running to the sheet's last used
+column; values keep nulls so every row has the same length as cols). Date rows give cols[sheet] and
+cols["sheet#row"]. Date cells in data rows become Excel serials.
+  Fin-IGAAP  label C|B|A, total D, first E,  dates row 3
+  Fin-INDAS  label C|B|A, total D, first E,  dates row 3
+  COP-MOF    label C,     total G, first H,  dates row 9 (month end); "#11" = FY end
+  Revenue    label C,     total D, first E,  dates row 5 (month end); "#4" = payment date
+  Debt       label B,     total C, first D,  dates row 23 (1st annuity-end block); "#7" = COD block
+  O&M Cost   label D|C,   total I, first E,  dates row 11
+  Inflation  label B,     none,    first C,  dates row 9; "#12" = FY row of the rate table
+  DB         label B,     none,    first C,  dates row 60 (annuities); #63 FY, #91 MMR FY, #72 MA dates,
+             #77 milestone month end, #78 milestone FY
+Numeric cells left of `first` (not the total) go in row.lead keyed by 1-based column; export_golden
+raises if any numeric cell in the sheet's used range is not exported.
 
 KPI source cells (kpis):
   Fin-IGAAP: equityIrrHalfYearly D194, equityIrrHalfYearlyPre D195, projectIrrPreAnnual D169,
@@ -37,16 +41,16 @@ def R(a, b):
     return list(range(a, b + 1))
 
 
+# first = first value column (values[i] is column first+i); every sheet runs to its full used extent.
 SHEETS = {
-    'Fin-IGAAP': dict(label=[3, 2, 1], total=4, first=5, last=23, rows=R(1, 417), dates=[3]),
-    'Fin-INDAS': dict(label=[3, 2, 1], total=4, first=5, last=23, rows=R(1, 448), dates=[3]),
-    'COP-MOF': dict(label=[3], total=7, first=8, last=67, rows=R(1, 390), dates=[9, 11]),
-    'Revenue': dict(label=[3], total=4, first=6, last=45, rows=R(1, 54), dates=[5, 4]),
-    'Debt': dict(label=[2], total=3, first=4, last=148, rows=R(1, 36), dates=[23, 7]),
-    'O&M Cost': dict(label=[4, 3], total=9, first=10, last=69, rows=R(1, 106), dates=[11]),
-    'Inflation': dict(label=[2], total=None, first=4, last=37, rows=R(7, 60), dates=[9, 12]),
-    'DB': dict(label=[2], total=3, first=4, last=39, rows=R(11, 19) + R(39, 67) + R(83, 106),
-               dates=[60, 63, 91]),
+    'Fin-IGAAP': dict(label=[3, 2, 1], total=4, first=5, dates=[3]),
+    'Fin-INDAS': dict(label=[3, 2, 1], total=4, first=5, dates=[3]),
+    'COP-MOF': dict(label=[3], total=7, first=8, dates=[9, 11]),
+    'Revenue': dict(label=[3], total=4, first=5, dates=[5, 4]),
+    'Debt': dict(label=[2], total=3, first=4, dates=[23, 7]),
+    'O&M Cost': dict(label=[4, 3], total=9, first=5, dates=[11]),
+    'Inflation': dict(label=[2], total=None, first=3, dates=[9, 12]),
+    'DB': dict(label=[2], total=None, first=3, dates=[60, 63, 91, 72, 77, 78]),
 }
 KPIS = {
     'Fin-IGAAP': dict(equityIrrHalfYearly='D194', equityIrrHalfYearlyPre='D195', projectIrrPreAnnual='D169',
@@ -66,7 +70,7 @@ def num(v):
     if isinstance(v, (dt.datetime, dt.date)):
         v = to_excel(v)
     if isinstance(v, (int, float)) and isfinite(v):
-        return float(f'{v:.12g}')
+        return float(v)  # full precision; json writes the shortest round-trip repr
     return None
 
 
@@ -74,25 +78,41 @@ def iso(v):
     return v.strftime('%Y-%m-%d') if isinstance(v, (dt.datetime, dt.date)) else None
 
 
-def export_golden(get, set_name='sample', inputs=None):
+def export_golden(get, extent, set_name='sample', inputs=None):
+    """extent(sheet) -> (max_row, max_col) of the used range. Fails if a numeric/date cell lies
+    outside label, total and value columns (i.e. the layout below would silently drop it)."""
     cells, cols = {}, {}
     for sheet, c in SHEETS.items():
-        span = R(c['first'], c['last'])
+        max_row, max_col = extent(sheet)
+        span = R(c['first'], max_col)
         for i, dr in enumerate(c['dates']):
             cols[sheet if i == 0 else f'{sheet}#{dr}'] = [iso(get(sheet, dr, k)) for k in span]
-        for r in c['rows']:
+        known = {c['total']} if c['total'] else set()
+        for r in range(1, max_row + 1):
+            # numeric cells left of `first` that are not the total (e.g. COP-MOF rates in A..F)
+            lead = {k: v for k in range(1, c['first']) if k not in known
+                    for v in [num(get(sheet, r, k))] if v is not None}
             vals = [num(get(sheet, r, k)) for k in span]
             tot = num(get(sheet, r, c['total'])) if c['total'] else None
-            if tot is None and all(v is None for v in vals):
-                continue
             texts = (get(sheet, r, k) for k in c['label'])
             label = next((x.strip() for x in texts if isinstance(x, str) and x.strip()), '')
-            while vals and vals[-1] is None:  # trim trailing empties (values[i] = column first+i)
-                vals.pop()
-            cells[f'{sheet}!{r}'] = dict(label=label, total=tot, values=vals)
+            if tot is None and not label and not lead and all(v is None for v in vals):
+                continue
+            row = dict(label=label, total=tot, values=vals)
+            if lead:
+                row['lead'] = {str(k): v for k, v in lead.items()}  # keyed by 1-based column
+            cells[f'{sheet}!{r}'] = row
+        seen = sum(num(get(sheet, r, k)) is not None for r in range(1, max_row + 1)
+                   for k in range(1, max_col + 1))
+        kept = sum((row['total'] is not None and c['total'] < c['first']) + len(row.get('lead', ())) + sum(
+            v is not None for v in row['values']) for key, row in cells.items()
+            if key.startswith(sheet + '!'))
+        if seen != kept:  # a numeric cell in the used range was not exported
+            raise ValueError(f'{sheet}: {seen - kept} numeric cells in the used range not exported')
     kpis = {k: num(get(s, int(a[1:]), ord(a[0]) - 64)) for s, d in KPIS.items() for k, a in d.items()}
     meta = dict(set=set_name, inputs=inputs or {}, extracted=dt.date.today().isoformat(),
-                layout={s: {k: c[k] for k in ('first', 'last', 'total')} for s, c in SHEETS.items()})
+                layout={s: dict(first=c['first'], last=extent(s)[1], total=c['total'])
+                        for s, c in SHEETS.items()})
     return dict(meta=meta, cells=cells, cols=cols, kpis=kpis)
 
 
@@ -103,7 +123,11 @@ def main(argv):
     if not src or not out:
         sys.exit('usage: extract_golden.py <v16.xlsx> <out.json>  (or V16_PATH env)')
     wb = openpyxl.load_workbook(src, data_only=True)
-    g = export_golden(lambda s, r, c: wb[s].cell(r, c).value)
+    missing = [n for n in SHEETS if n not in wb.sheetnames]
+    if missing:
+        sys.exit(f'workbook lacks sheets: {missing}')
+    g = export_golden(lambda s, r, c: wb[s].cell(r, c).value,
+                      lambda s: (wb[s].max_row, wb[s].max_column))
     with open(out, 'w', encoding='utf-8') as f:
         json.dump(g, f, separators=(',', ':'), ensure_ascii=False)
     print(f"{out}: {os.path.getsize(out) / 1e6:.2f} MB, {len(g['cells'])} rows")
