@@ -1,11 +1,5 @@
-import sample from './golden/sample.json' // tight recalculation of the unchanged workbook
-import sampleCached from './golden/sample-cached.json' // V16's cached values (openpyxl)
-import bid2400 from './golden/bid2400.json'
-import epc105 from './golden/epc105.json'
-import build1460 from './golden/build1460.json'
-import equity30 from './golden/equity30.json'
-import rates50bp from './golden/rates50bp.json'
-import equated from './golden/equated.json'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Inputs } from '../types'
 import { V16_SAMPLE } from './sample'
 
@@ -23,13 +17,19 @@ export interface Golden {
   kpis: Record<string, number | null>
 }
 
-const sets: Record<string, Golden> = Object.fromEntries(
-  Object.entries({ sample, sampleCached, bid2400, epc105, build1460, equity30, rates50bp, equated })
-    .map(([k, g]) => [k, g as unknown as Golden]))
+// Test-only (Node: vite-node provides __dirname): each set is ~1.7 MB, so read on first use (sample = tight recalculation of the unchanged workbook,
+// sampleCached = V16's cached values via openpyxl, the rest are the differential sets).
+const SETS = ['sample', 'sampleCached', 'bid2400', 'epc105', 'build1460', 'equity30', 'rates50bp', 'equated']
+const FILES: Record<string, string> = { sampleCached: 'sample-cached' }
+const cache = new Map<string, Golden>()
 
 export const golden = (set: string): Golden => {
-  const g = sets[set]
-  if (!g) throw new Error(`golden set not loaded: ${set}`)
+  if (!SETS.includes(set)) throw new Error(`golden set not loaded: ${set}`)
+  let g = cache.get(set)
+  if (!g) {
+    g = JSON.parse(readFileSync(join(__dirname, 'golden', `${FILES[set] ?? set}.json`), 'utf8')) as Golden
+    cache.set(set, g)
+  }
   return g
 }
 
