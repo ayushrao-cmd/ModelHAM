@@ -23,9 +23,9 @@ const startsEmpty = (f: FieldDef) => !f.prefill && f.kind !== 'select' && !f.rea
 const BLANK_FIELDS = FIELDS.filter(startsEmpty)
 export const BLANK_EMPTY: string[] = BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)))
 /** The field each blank leaf belongs to: 'capital.repayment.3' → 'capital.repayment'. */
+export const BLANK_FIELD_OF = new Map(BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).map(p => [p, f.id])))
 /** Blank-class fields added in persist v3: a v2 blank save has no value for them. */
 export const V3_BLANK_PATHS = BLANK_EMPTY.filter(p => under('build.manualPhasing')(p) || under('build.spvManpower')(p))
-export const BLANK_FIELD_OF = new Map(BLANK_FIELDS.flatMap(f => leafPaths(f.id, getAt(DEFAULT_INPUTS, f.id)).map(p => [p, f.id])))
 export const BLANK_INPUTS: Inputs = BLANK_EMPTY.reduce(
   (i, p) => setAt(i, p, typeof getAt(i, p) === 'string' ? '' : 0), DEFAULT_INPUTS)
 const EMPTIABLE = new Set(BLANK_EMPTY)

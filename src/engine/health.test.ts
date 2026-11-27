@@ -322,3 +322,19 @@ describe('statement checks', () => {
     expect(find(statementChecks(s), 'bs-balance').pass).toBe(true)
   })
 })
+
+describe('manual phasing total', () => {
+  const find = (i: Inputs) => validateInputs(i).find(c => c.id === 'manual-phasing-sum')!
+  const bad = (phasing: Inputs['build']['phasing']) => ({ ...D, build: { ...D.build, phasing, manualPhasing: D.build.manualPhasing.map((x, k) => (k === 0 ? x - 0.05 : x)) } })
+  it('passes at defaults and for a V16 manual phasing', () => {
+    expect(find(D).pass).toBe(true)
+    expect(find({ ...D, build: { ...D.build, phasing: 'manual' } }).pass).toBe(true)
+  })
+  it('fails when manual phasing totals 95%, only while manual is selected', () => {
+    const c = find(bad('manual'))
+    expect(c.pass).toBe(false)
+    expect(c.message).toContain('95.00%')
+    expect(c.fieldId).toBe('build.manualPhasing')
+    expect(find(bad('equated')).pass).toBe(true)
+  })
+})

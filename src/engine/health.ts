@@ -96,6 +96,9 @@ export function validateInputs(i: Inputs): Check[] {
     : `${tranches.length} tranches split Construction Support of ${fmt.pct(pctOfBid)} of bid by weight, in ascending progress.`
   const tranchesOk = (tranches.length > 0 || pctOfBid === 0) && badWeight < 0 && badProgress < 0
 
+  const mp = sum(i.build.manualPhasing), mpOk = i.build.phasing !== 'manual' || Math.abs(mp - 1) <= 1e-6
+  const mpMsg = mpOk ? 'Manual EPC phasing totals 100%.' : `Manual EPC phasing sums to ${fmt.pct(mp)} (must be 100.00%).`
+
   const [r1, r2] = i.operations.resurfacingYears, Y = i.deal.operateYears
   const resurfacingOk = Number.isInteger(r1) && Number.isInteger(r2) && r1 >= 1 && r2 > r1 + RESURFACING_GAP && r2 < Y
   const resurfacingMsg = r2 <= r1 + RESURFACING_GAP ? `Second resurfacing (year ${r2}) must be more than ${RESURFACING_GAP} years after the first (year ${r1}).`
@@ -119,6 +122,7 @@ export function validateInputs(i: Inputs): Check[] {
     schedule('installment-sum', 'Completion Payment Schedule', 'income', 'income.installments', i.income.installments,
       i.income.installments.length === periods, `it needs exactly ${periods} (${PERIODS_PER_YEAR} × ${Y} operate years)`),
     check('tranche-sum', 'Support tranches valid', 'capital', 'error', tranchesOk, trancheMsg, 'support.tranches'),
+    check('manual-phasing-sum', 'Manual EPC phasing total', 'phasing', 'error', mpOk, mpMsg, 'build.manualPhasing'),
     check('resurfacing-order', 'Resurfacing years in order', 'operations', 'error', resurfacingOk, resurfacingMsg, 'operations.resurfacingYears'),
     check('dates-order', 'Rate quote on or before bid date', 'income', 'error', datesValid && quote <= bid,
       datesValid ? `Rate quote ${fmt.date(quote)} ${quote <= bid ? 'is on or before' : 'is after'} the bid date ${fmt.date(bid)}.`

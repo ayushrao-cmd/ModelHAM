@@ -18,6 +18,7 @@ export const DEFAULT_INPUTS: Inputs = {
     fundRaisingPctOfDebt: 0.01, financeLegal: 4.21, contingency: 5, preBid: 0.2904, preBidMiscPct: 1,
     spvFormationPctOfShareCapital: 0.0025, patrolCapital: 1.03, patrolRental: 0.846,
     perfSecurityPctOfBid: 0.05, perfSecurityCommissionPa: 0.015, phasing: 'equated',
+    // last entry is V16's own plug (0.009999999999999454) so the row sums to exactly 1
     manualPhasing: [...Array(4).fill(0.02), ...Array(11).fill(0.03), ...Array(9).fill(0.04), 0.03, 0.03, ...Array(7).fill(0.02), 0.01, 0.01, 0.009999999999999454],
     spvManpower: 1.5, patrolRentalPerMonth: 0.0235, flcOneOff: 0.27, flcAnnual: 1.15 },
   stl: { pctOfBid: 0.1, option: 'STL', repayShare: 0.125, repayMilestones: 8 },

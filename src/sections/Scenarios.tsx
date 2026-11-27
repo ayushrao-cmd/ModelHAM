@@ -24,6 +24,7 @@ const KEY_LABEL: Record<string, string> = { day: 'day', physical: 'physical', fi
 function show(f: FieldDef, v: unknown, key?: string): string {
   if (v === undefined) return '—'
   if (typeof v === 'string') return f.kind === 'date' ? fmt.date(v) : f.options?.find(o => o.value === v)?.label ?? v
+  if (typeof v === 'boolean') return v ? 'On' : 'Off'
   if (typeof v !== 'number') return String(v)
   if (key === 'day') return `Day ${fmt.num(v, 0)}`
   if (f.kind === 'money') return fmt.cr(v)
