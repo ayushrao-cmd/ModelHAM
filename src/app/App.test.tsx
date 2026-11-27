@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../state/store'
+import { cookies } from '../lib/cookies'
 import { Recover } from './App'
+import { MethodNotice, NOTICE_KEY } from './MethodNotice'
 
 const activeInputs = () => { const s = useStore.getState(); return s.scenarios.find(x => x.id === s.activeId)!.inputs }
 /** Stands in for an engine crash on the active scenario's inputs. */
@@ -42,5 +44,17 @@ describe('Recover', () => {
     expect(screen.getByText('Model ok')).toBeTruthy()
     expect(useStore.getState().scenarios).toHaveLength(1)
     expect(useStore.getState().projects.map(x => x.id)).toContain(other)
+  })
+})
+
+describe('MethodNotice', () => {
+  it('appears once per browser and links to the method notes', () => {
+    cookies.remove(NOTICE_KEY)
+    const first = render(<MethodNotice />)
+    expect(screen.getByRole('status').textContent).toMatch(/Numbers now follow the original workbook's method/)
+    expect(screen.getByRole('link', { name: 'See the method notes' }).getAttribute('href')).toBe('#/health?section=notes')
+    first.unmount()
+    render(<MethodNotice />) // a reload
+    expect(screen.queryByRole('link', { name: 'See the method notes' })).toBeNull()
   })
 })
