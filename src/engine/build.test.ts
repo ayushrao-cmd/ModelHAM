@@ -86,7 +86,7 @@ describe('runBuild (defaults)', () => {
     })
     expect(long.months.slice(0, n - 1).every(m => m.supportReceived === 0)).toBe(true)
     for (const x of [zero, max]) expect(Math.abs(x.support + x.supportGst + x.equity + x.debt - x.totalUses)).toBeLessThan(0.01)
-    expect(r.idc).toBeGreaterThan(zero.idc) // later support means more debt outstanding during the build
+    expect(at(30).idc).toBeGreaterThan(zero.idc) // later support means more debt outstanding during the build
   })
 
   it('physical progress reaches 100%, cash never negative', () => {

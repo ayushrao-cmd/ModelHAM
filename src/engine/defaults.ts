@@ -7,7 +7,7 @@ const installments = INSTALLMENT_PCT.map(p => p / 100)
 installments[installments.length - 1] += 1 - installments.reduce((a, b) => a + b, 0)
 
 export const DEFAULT_INPUTS: Inputs = {
-  deal: { projectName: 'Sample Greenfield Corridor – Pkg 2', authorityName: 'Authority (demo)', bidPrice: 2260,
+  deal: { projectName: 'Sample Greenfield Corridor – Pkg 2', authorityName: 'Authority (demo)', bidPrice: 2250,
     authorityEstimate: 2183.15, lengthKm: 32.955, bidDate: '2026-07-08', daysToAward: 60, daysToAgreement: 45,
     daysToStart: 150, buildDays: 1095, operateYears: 15, pavement: 'flexiblePerpetual' },
   milestones: [
@@ -20,7 +20,7 @@ export const DEFAULT_INPUTS: Inputs = {
     perfSecurityPctOfBid: 0.05, perfSecurityCommissionPa: 0.015, phasing: 'equated' },
   support: { pctOfBid: 0.4,
     tranches: [0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9].map(progress => ({ progress, shareOfBid: 0.04 })),
-    lagDays: 30 },
+    lagDays: 0 },
   capital: { equityPct: 0.25, upfrontEquityPct: 0.5, shareCapitalPct: 0.25, buildRate: 0.0975, operateRate: 0.095,
     repayment: [0.015,0.015,0.02,0.02,0.03,0.03,0.04,0.04,0.045,0.045,0.045,0.045,0.045,0.045,0.044,0.044,0.044,0.044,0.044,0.044,0.05,0.05,0.055,0.055,0.046],
     maxLeverage: 3, dscrWarn: 1.10 },

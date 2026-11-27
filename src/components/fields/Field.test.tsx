@@ -33,7 +33,7 @@ describe('Field', () => {
     fireEvent.blur(input)
     expect(screen.getByText(/enter a number/i)).toBeTruthy()
     expect(input.getAttribute('aria-invalid')).toBe('true')
-    expect(active('deal.bidPrice')).toBe(2260)
+    expect(active('deal.bidPrice')).toBe(2250)
     expect(screen.getByTestId('kpi').textContent).not.toMatch(/NaN/)
   })
 
@@ -44,13 +44,13 @@ describe('Field', () => {
     const input = screen.getByLabelText('Bid Price') as HTMLInputElement
     expect(screen.queryByText('Changed from base')).toBeNull()
     fireEvent.change(input, { target: { value: '2,300' } })
-    expect(active('deal.bidPrice')).toBe(2260) // debounced
+    expect(active('deal.bidPrice')).toBe(2250) // debounced
     act(() => { vi.advanceTimersByTime(200) })
     expect(active('deal.bidPrice')).toBe(2300)
     expect(screen.getByText('Changed from base')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /reset bid price/i }))
-    expect(active('deal.bidPrice')).toBe(2260)
-    expect(input.value).toBe('2,260')
+    expect(active('deal.bidPrice')).toBe(2250)
+    expect(input.value).toBe('2,250')
     expect(screen.queryByText('Changed from base')).toBeNull()
   })
 
@@ -63,7 +63,7 @@ describe('Field', () => {
     expect(active('deal.bidPrice')).toBe(2400)
     expect(screen.getByText('Changed from base')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /reset bid price/i }))
-    expect(active('deal.bidPrice')).toBe(2260)
+    expect(active('deal.bidPrice')).toBe(2250)
     expect(screen.queryByText('Changed from base')).toBeNull()
   })
 

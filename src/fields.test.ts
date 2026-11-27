@@ -26,7 +26,7 @@ describe('field registry', () => {
   it('setAt is immutable', () => {
     const next = setAt(DEFAULT_INPUTS, 'deal.bidPrice', 1)
     expect(next.deal.bidPrice).toBe(1)
-    expect(DEFAULT_INPUTS.deal.bidPrice).toBe(2260)
+    expect(DEFAULT_INPUTS.deal.bidPrice).toBe(2250)
     expect(next.build).toBe(DEFAULT_INPUTS.build)
   })
   it('setAt keeps arrays as arrays and does not mutate', () => {

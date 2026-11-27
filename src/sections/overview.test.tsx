@@ -86,7 +86,7 @@ describe('Health', () => {
     render(<CheckFlipToasts />)
     act(() => useStore.getState().setInput('deal.bidPrice', 1800)) // mid-typing value that fails DSCR
     act(() => { vi.advanceTimersByTime(300) })
-    act(() => useStore.getState().setInput('deal.bidPrice', 2260))
+    act(() => useStore.getState().setInput('deal.bidPrice', 2250))
     act(() => { vi.advanceTimersByTime(1000) })
     expect(warn).not.toHaveBeenCalled()
     expect(ok).not.toHaveBeenCalled()

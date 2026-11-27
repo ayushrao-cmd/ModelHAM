@@ -13,7 +13,7 @@ describe('solveBidPrice', () => {
     const r = solveBidPrice(DEFAULT_INPUTS, base)
     const ms = performance.now() - t0
     expect(r.ok).toBe(true)
-    if (r.ok) expect(Math.abs(r.bidPrice - 2260)).toBeLessThan(1)
+    if (r.ok) expect(Math.abs(r.bidPrice - 2250)).toBeLessThan(1)
     expect(r.runs).toBeLessThanOrEqual(40)
     expect(ms).toBeLessThan(1000)
   })
@@ -46,8 +46,8 @@ describe('solveBidPrice', () => {
     expect(r.ok).toBe(false)
     expect(r.runs).toBe(2)
     if (!r.ok) {
-      expect(r.reason).toContain('₹1,130.00 Cr')
-      expect(r.reason).toContain('₹3,390.00 Cr')
+      expect(r.reason).toContain('₹1,125.00 Cr')
+      expect(r.reason).toContain('₹3,375.00 Cr')
     }
   })
 })

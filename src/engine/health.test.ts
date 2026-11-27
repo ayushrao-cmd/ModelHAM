@@ -34,14 +34,14 @@ describe('health at defaults', () => {
     expect(failing(cs).filter(c => c.severity === 'error').map(c => c.id)).toEqual([])
     const om = find(cs, 'om-margin')
     expect(om).toMatchObject({ severity: 'warning', pass: false })
-    expect(om.message).toContain('₹23.89 Cr') // workbook O&M loss ~₹20 Cr; ours −23.89 at defaults
+    expect(om.message).toContain('₹25.34 Cr') // workbook O&M loss ~₹20 Cr; ours −25.34 at defaults
   })
 
   it('milestone funding excess is reported with its amount, never clipped (support paid in the earned month)', () => {
-    const f2 = find(checks(setAt(D, 'support.lagDays', 0)), 'milestone-funding-2')
+    const f2 = find(cs, 'milestone-funding-2')
     expect(f2).toMatchObject({ severity: 'warning', pass: false, fieldId: 'support.tranches' })
-    expect(f2.message).toContain('₹45.90 Cr')
-    expect(find(cs, 'milestone-funding-2').pass).toBe(true) // the default 30-day lag clears it
+    expect(f2.message).toContain('₹45.42 Cr')
+    expect(find(checks(setAt(D, 'support.lagDays', 30)), 'milestone-funding-2').pass).toBe(true) // a 30-day lag clears it
     expect(find(cs, 'milestone-funding-3').pass).toBe(true)
   })
 
@@ -51,7 +51,7 @@ describe('health at defaults', () => {
     expect(s.passed).toBe(cs.filter(c => c.pass).length)
     expect(s.errors).toBe(0)
     expect(s.warnings).toBe(failing(cs).filter(c => c.severity === 'warning').length)
-    expect(s.warnings).toBeGreaterThanOrEqual(1)
+    expect(s.warnings).toBeGreaterThanOrEqual(2)
   })
 
   it('every check has a known section and, if set, a resolvable field', () => {
@@ -98,10 +98,10 @@ describe('rate-quote-fresh', () => {
 })
 
 describe('financing-tieup', () => {
-  it('threshold is 1151.24 at defaults and passes', () => {
+  it('threshold is 1154.84 at defaults and passes', () => {
     const c = find(checks(D), 'financing-tieup')
     expect(c.pass).toBe(true)
-    expect(c.message).toContain('₹1,151.24 Cr')
+    expect(c.message).toContain('₹1,154.84 Cr')
   })
   it('fails when debt + equity < min(0.9×(AE − 0.4×bid), 0.6×bid) (Ruling 2: bid 2600, AE 4000 → 1560)', () => {
     const c = find(checks(setAt(setAt(D, 'deal.bidPrice', 2600), 'deal.authorityEstimate', 4000)), 'financing-tieup')
@@ -260,8 +260,8 @@ describe('no build months', () => {
 
 
 describe('float edges and recovery', () => {
-  it('at defaults only the known O&M warning fails (leverage sits at 3.0x to within the solver tolerance)', () => {
-    expect(failing(checks(D)).map(c => c.id).sort()).toEqual(['om-margin'])
+  it('at defaults only the two known warnings fail (leverage sits at 3.0x to within the solver tolerance)', () => {
+    expect(failing(checks(D)).map(c => c.id).sort()).toEqual(['milestone-funding-2', 'om-margin'])
   })
   it('money and ratio comparisons tolerate solver and float residue, but not real misses', () => {
     const r = runModel(D), b = r.build

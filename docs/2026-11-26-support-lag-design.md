@@ -21,3 +21,8 @@ hurdle, so the sample bid moved ₹2,250 → ₹2,260 Cr (Solve gives ₹2,259.7
 effect. (3) Move the milestone day / change phasing — only measures a different month, or breaks Milestone 1 progress.
 
 **Excel.** `Support_Lag_Days` input on Capital; Calc_Build tranche block gains "Received month #"; checks 99 → 100.
+
+**Update 2026-11-27.** The client wants the site to match the original workbook's numbers, so the sample went back to
+the original's inputs: bid ₹2,250 Cr and Support Payment Lag 0 (same-month receipt, as the original). The lag input
+stays; set it to 30 to model certification delay. The Milestone 2 funding warning returns at the sample, as in the
+original.
