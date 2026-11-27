@@ -73,6 +73,11 @@
         "cell": "'Fin-INDAS'!CS193:CV210",
         "fillFrom": "'Fin-INDAS'!CR193:CR210",
         "why": "Cash-flow, FY-mapping, flag and XIRR rows of the same IndAS block (r193-r210) extended to CV with the date row above (IGAAP r177-r208 already reach CV)."
+      },
+      {
+        "cell": "'Fin-IGAAP'!I366:AH366",
+        "fillFrom": "'Fin-IGAAP'!H366",
+        "why": "GST on CP period expenses (SUMIF of COP-MOF r277 by FY) is filled only for E:H (FY27-FY30) while every other GST ledger row runs to AH. At 1460 build days construction ends in FY31, so FY31's CP input GST (0.4395) is dropped from the credit ledger and CF r84. Extended to AH like the rest of the ledger."
       }
     ]
   }
