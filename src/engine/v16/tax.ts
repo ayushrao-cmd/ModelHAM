@@ -1,3 +1,4 @@
+import { fyEnd } from '../dates'
 import type { Inputs } from '../types'
 import type { ConstructionResult, UseKey } from './construction'
 import type { DebtResult } from './debt'
@@ -70,17 +71,19 @@ const receipts = (rev: RevenueResult, g: Grid) =>
 
 /** Companies Act amortisation, revenue-based (Fin-IGAAP r238–r241): E240 = −Σ additions to date / Σ(D8:D11) × Σ(E8:E11).
  *  Interest on funds (r12) is not in the share. */
-export function bookDepreciation(c: ConstructionResult, rev: RevenueResult, g: Grid): Depreciation {
+export function bookDepreciation(cap: CapitalisedCost, rev: RevenueResult, g: Grid): Depreciation {
   const r = receipts(rev, g), total = sum(r)
-  return rollForward(capitalisedCost(c, g).additions, (cum, k) => (total ? cum / total * r[k] : 0))
+  // No Authority receipts at all: V16 divides by Σ(D8:D11) = 0 (#DIV/0!); nothing is amortised here instead.
+  if (!total) return rollForward(cap.additions, () => 0)
+  return rollForward(cap.additions, (cum, k) => cum / total * r[k])
 }
 
 /** Income-tax Act depreciation, SLM ('Fin Set'!B42, rows 246–250): E249 = −1/life × Σ additions to date × E5 (op factor
  *  from COD). No cap at the balance: V16's Σ factor is exactly the life (B-Q11 complements), so it ends at 0. The WDV
  *  option (r252–r257) is unused in V16 and not modelled. */
-export function taxDepreciation(c: ConstructionResult, g: Grid, i: Inputs): Depreciation & { rate: number } {
+export function taxDepreciation(cap: CapitalisedCost, g: Grid, i: Inputs): Depreciation & { rate: number } {
   const rate = 1 / i.tax.depLifeYears // 'Fin Set'!D42 = 1/'CA Set'!O8
-  return { rate, ...rollForward(capitalisedCost(c, g).additions, (cum, k) => rate * cum * g.opFactorCod[k]) }
+  return { rate, ...rollForward(cap.additions, (cum, k) => rate * cum * g.opFactorCod[k]) }
 }
 
 /** IGAAP P&L to PBT before CSR: r13 total revenue (receipts + r12 interest on funds) and r33 = r13 + r25 + r30 + r32.
@@ -115,8 +118,8 @@ export function runTax(i: Inputs, g: Grid, pbtBeforeCsr: number[], bookDep: numb
   g.fys.forEach((_, k) => {
     const pbtIt = r.pbt[k] + bookDep[k] - taxDep[k]
     const open = k ? r.lossCarried[k - 1] : 0, loss = Math.min(pbtIt, 0), profit = Math.max(pbtIt, 0)
-    // V16 quirk B-Q7: E266 = open + this year's loss (r270 + r271), so a loss year counts its own loss twice; no tax
-    // effect, the result is floored at 0.
+    // V16 quirk B-Q7: the b/f loss E266 = opening + this year's loss (r270 + r271), not the opening alone. In a loss
+    // year the current loss is thus in both r265 and r266; taxable = MAX(r265 + r266, 0) is 0 either way, so no tax effect.
     const bf = open + loss < 0 ? open + loss : 0
     const taxable = Math.max(pbtIt + bf, 0)
     r.pbtIt[k] = pbtIt; r.lossesBf[k] = bf; r.taxable[k] = taxable; r.tax[k] = taxable * rate
@@ -139,16 +142,19 @@ export interface CsrResult {
  * (> 'Fin Set'!I11 / J11 / K11) and charges MAX(L11 × AVERAGE(PBT of the up-to-3 preceding FYs, incl. 0 and losses), 0).
  * CSR_t depends on PAT_{t−1} only, so a caller computing PAT from this CSR converges in one pass per FY.
  */
-export function csr(i: Inputs, g: Grid, pbt: number[], netWorth: number[], turnover: number[], pat: number[]): CsrResult {
-  const s = i.csr
+export function csr(i: Inputs, g: Grid, pbt: number[], netWorth: number[], turnover: number[], pat: number[],
+  standard: 'igaap' | 'indas'): CsrResult {
+  const s = i.csr, endFy = fyEnd(g.concessionEnd) // DB!N16
   const test = (a: number[], limit: number) => g.fys.map((_, k) => +(k > 0 && a[k - 1] > limit))
   const netWorthTest = test(netWorth, s.netWorth), turnoverTest = test(turnover, s.turnover), profitTest = test(pat, s.profit)
   const applicable = g.fys.map((_, k) => +(netWorthTest[k] + turnoverTest[k] + profitTest[k] >= 1))
-  // IGAAP's end check IF(E399 > DB!N16, 0, 1) never fires on the FY grid (E399 = previous FY ≤ the concession-end FY).
+  // IGAAP E406 × IF(E399 > DB!N16, 0, 1): 0 once the previous FY (E399 = EDATE(FY, −12)) is past the concession-end
+  // FY, so the FY right after it still pays CSR on the last year (payment-year lag).
   // V16 quirk B-Q12: IndAS (Fin-INDAS!E395) tests E370, a GST cell (₹ Cr, never above a date serial), instead of the
-  // year row, so IndAS is never cut off either; both standards use this one rule.
+  // year row, so IndAS CSR is never cut off by date.
+  const cutOff = (k: number) => standard === 'igaap' && k > 0 && g.fys[k - 1] > endFy
   const amount = g.fys.map((_, k) => {
-    if (!s.on || !applicable[k]) return 0 // 'Fin Set'!H11 switch (P&L r34)
+    if (!s.on || !applicable[k] || cutOff(k)) return 0 // 'Fin Set'!H11 switch (P&L r34)
     const prior = pbt.slice(Math.max(0, k - 3), k)
     return Math.max(sum(prior) / prior.length * s.rate, 0)
   })

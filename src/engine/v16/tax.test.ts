@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { addMonths, fyEnd } from '../dates'
 import { row, inputsFor, expectSeries, expectClose, opsFor } from './golden'
 import { buildGrid } from './grid'
 import { grantSchedule, runConstruction } from './construction'
@@ -19,7 +20,7 @@ const setup = (set: string) => {
   const rev = runRevenue(i, g, c), opex = runOpex(i, g, sum(grantSchedule(i, g).pim)), debt = runDebt(i, g, c)
   const funds = runFunds(i, g, c, rev, opex, debt, neg(row(set, 'Fin-IGAAP!35').values), row(set, 'Fin-IGAAP!136').values)
   const gst = runGst(g, c, rev, opex)
-  const cap = capitalisedCost(c, g), book = bookDepreciation(c, rev, g), itDep = taxDepreciation(c, g, i)
+  const cap = capitalisedCost(c, g), book = bookDepreciation(cap, rev, g), itDep = taxDepreciation(cap, g, i)
   const pl = igaapProfit(g, rev, opex, debt, gst, funds, book.depreciation)
   const tax = runTax(i, g, pl.pbt, book.depreciation, itDep.depreciation)
   return { i, g, c, cap, book, itDep, pl, tax }
@@ -101,7 +102,7 @@ for (const set of ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rate
     it('IGAAP CSR: rows 399–407 and P&L r34', () => {
       // Net worth (r40 + r42..r46, excl. USL r41) and PAT (r36) need the statements (Task 14): from golden here.
       const netWorth = g.fys.map((_, k) => [40, 42, 43, 44, 45, 46].reduce((s, n) => s + r(n).values[k], 0))
-      const out = csr(i, g, pl.pbt, netWorth, pl.turnover, r(36).values)
+      const out = csr(i, g, pl.pbt, netWorth, pl.turnover, r(36).values, 'igaap')
       expectSeries(out.netWorthTest, r(400), 0, 'r400')
       expectSeries(out.turnoverTest, r(401), 0, 'r401')
       expectSeries(out.profitTest, r(402), 0, 'r402')
@@ -115,7 +116,7 @@ for (const set of ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rate
     it('IndAS CSR: Fin-INDAS rows 389–395 and P&L r47 from golden IndAS PBT (r394), quirk B-Q12', () => {
       // IndAS PBT, net worth (r53 + r55..r59), turnover (r14) and PAT (r49) need the IndAS statements (Task 15).
       const netWorth = g.fys.map((_, k) => [53, 55, 56, 57, 58, 59].reduce((s, n) => s + ind(n).values[k], 0))
-      const out = csr(i, g, ind(394).values, netWorth, ind(14).values, ind(49).values)
+      const out = csr(i, g, ind(394).values, netWorth, ind(14).values, ind(49).values, 'indas')
       expectSeries(out.netWorthTest, ind(389), 0, 'r389')
       expectSeries(out.turnoverTest, ind(390), 0, 'r390')
       expectSeries(out.profitTest, ind(391), 0, 'r391')
@@ -144,13 +145,25 @@ describe('v16 tax: unit', () => {
   it('CSR: average of up to 3 prior FYs incl. losses, floored at 0, off when csr.on is false', () => {
     const pbt = g.fys.map((_, k) => [0, -30, 10, 50, 50][k] ?? 50)
     const pat = g.fys.map(() => 10)
-    const out = csr(i, g, pbt, g.fys.map(() => 0), g.fys.map(() => 0), pat)
+    const out = csr(i, g, pbt, g.fys.map(() => 0), g.fys.map(() => 0), pat, 'igaap')
     expect(out.amount[0]).toBe(0) // first FY: hard 0 tests
     expect(out.amount[1]).toBe(0) // avg(0) × 2%
     expect(out.amount[2]).toBe(0) // avg(0, −30) < 0 → 0
     expectClose(out.amount[4], 0.02 * (-30 + 10 + 50) / 3, 1e-12)
     expectClose(out.amount[n - 1], 0.02 * 50, 1e-12)
-    const off = csr({ ...i, csr: { ...i.csr, on: false } }, g, pbt, pat, pat, pat)
+    const off = csr({ ...i, csr: { ...i.csr, on: false } }, g, pbt, pat, pat, pat, 'igaap')
     expect(off.amount.every((v) => v === 0)).toBe(true)
+  })
+
+  it('CSR end check: IGAAP 0 once the previous FY is past the concession-end FY; IndAS never (quirk B-Q12)', () => {
+    const last = g.fys[n - 1]
+    expect(last).toBe(fyEnd(g.concessionEnd))
+    const ext = { ...g, fys: [...g.fys, addMonths(last, 12), addMonths(last, 24)] } // FY46, FY47
+    const pbt = ext.fys.map(() => 50), pat = ext.fys.map(() => 10), z = ext.fys.map(() => 0)
+    const igaap = csr(i, ext, pbt, z, z, pat, 'igaap').amount, indas = csr(i, ext, pbt, z, z, pat, 'indas').amount
+    expectClose(igaap[n], 1, 1e-12) // FY46: E399 = FY45 = DB!N16, not > N16, so V16 still charges it
+    expect(igaap[n + 1]).toBe(0)    // FY47: E399 = FY46 > N16
+    expectClose(indas[n], 1, 1e-12); expectClose(indas[n + 1], 1, 1e-12)
+    expect(igaap.slice(0, n)).toEqual(indas.slice(0, n))
   })
 })
