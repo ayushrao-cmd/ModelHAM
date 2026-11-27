@@ -145,11 +145,12 @@ export function stlSchedule(i: Inputs, g: Grid, grant: GrantSchedule): StlSchedu
 
 /**
  * COP-MOF r15..r45 (gross, GST) by period at the given senior debt `D` (COP-MOF D75), total equity `E` (D70) and
- * PSBG release date `psbgRelease` ('CA Set'!J14, fractional day).
+ * PSBG release date `psbgRelease` ('CA Set'!J14, fractional day). `grant` and `stl` do not depend on them, so the
+ * outer loop passes them in once.
  */
-export function constructionUses(i: Inputs, g: Grid, D: number, E: number, psbgRelease: Day): UseLines {
+export function constructionUses(i: Inputs, g: Grid, D: number, E: number, psbgRelease: Day,
+  grant = grantSchedule(i, g), stl = stlSchedule(i, g, grant)): UseLines {
   const b = i.build, bid = i.deal.bidPrice, gw = b.gstWorks, gs = b.gstServices // GSTWorks; GSTFLC = GSTOthers
-  const grant = grantSchedule(i, g), stl = stlSchedule(i, g, grant)
   const cons = g.periods.map((p) => p.kind === 'construction')
   const lastK = cons.lastIndexOf(true)
   const fyEnds = fyEndCount(g)
@@ -222,8 +223,10 @@ const STL_EQUITY_SHARE = 0.1
 // Outer fixed point (G66, J14) and inner per-month interest solve; V16 relies on Excel iteration (100 × 0.001).
 const OUTER_MAX = 50, OUTER_TOL = 1e-9, INNER_MAX = 100, INNER_TOL = 1e-12
 
-/** From the operations modules (Task 13): Fin-IGAAP D331 interest DSR and COP-MOF r314 O&M COD → 1st annuity by period. */
-export interface ConstructionOps { interestDsr: number; postCodOpex: number[] }
+/** From the operations modules: Fin-IGAAP D331 interest DSR and COP-MOF r314 O&M COD → 1st annuity by period. The
+ *  interest DSR depends on the debt this funds (½ × FY32's interest at the sample), so it may be given as a function of
+ *  the construction result: it is then solved in the same outer fixed point (`model.ts`). */
+export interface ConstructionOps { interestDsr: number | ((c: ConstructionResult) => number); postCodOpex: number[] }
 
 /** One COP-MOF column. Uses are gross of GST; draws and balances per A §5. */
 export interface ConstructionMonth {
@@ -274,7 +277,7 @@ function split(gap: number, eCum: number, dCum: number, stl: number, eRem: numbe
 }
 
 /** COP-MOF r46..r91 walk at a given G66 (which sets D70, D71, D75, D90) with the uses built from it. */
-function fund(i: Inputs, g: Grid, u: UseLines, ops: ConstructionOps, g66: number) {
+function fund(i: Inputs, g: Grid, u: UseLines, ops: { interestDsr: number; postCodOpex: number[] }, g66: number) {
   const c = i.capital, e = c.equityPct
   const E = g66 * e, D = g66 * (1 - e), upfront = E * c.upfrontEquityPct, sc = E * c.shareCapitalPct
   // r41 = Fin-IGAAP D347: repayments of the first `dsrPrincipalInstalments` annuities (DB!D57) × D75.
@@ -350,22 +353,31 @@ function psbgReleaseDate(i: Inputs, g: Grid, months: ConstructionMonth[]): Day {
 
 /**
  * Construction funding (A §5) with one outer fixed point (A-G20) over G66 (→ D75, D70, D90: fund raising r24, SPV
- * formation r20, principal DSR r41, upfront equity) and the PSBG release date J14 (→ r28); IDC, COD→annuity interest
- * and the H74↔H75 split are solved inside each month. Stops after `maxIterations` with `converged: false`.
+ * formation r20, principal DSR r41, upfront equity), the PSBG release date J14 (→ r28) and, when `ops.interestDsr` is a
+ * function, the interest DSR r42; IDC, COD→annuity interest and the H74↔H75 split are solved inside each month. Stops
+ * after `maxIterations` with `converged: false`.
  */
 export function runConstruction(i: Inputs, g: Grid, ops: ConstructionOps, maxIterations = OUTER_MAX): ConstructionResult {
+  const dsrOf = typeof ops.interestDsr === 'function' ? ops.interestDsr : undefined
   let g66 = 0, psbg = addMonths(g.appointed, 12 * PSBG_YEARS), converged = false, iterations = 0
-  let u: UseLines, f: ReturnType<typeof fund>
+  let dsr = typeof ops.interestDsr === 'number' ? ops.interestDsr : 0
+  const grant = grantSchedule(i, g), stl = stlSchedule(i, g, grant)
+  let r: ConstructionResult
   do {
     iterations++
-    u = constructionUses(i, g, g66 * (1 - i.capital.equityPct), g66 * i.capital.equityPct, psbg)
-    f = fund(i, g, u, ops, g66)
-    const nextG66 = f.months[f.months.length - 1].required, nextPsbg = psbgReleaseDate(i, g, f.months)
+    const u = constructionUses(i, g, g66 * (1 - i.capital.equityPct), g66 * i.capital.equityPct, psbg, grant, stl)
+    const f = fund(i, g, u, { interestDsr: dsr, postCodOpex: ops.postCodOpex }, g66)
+    const m = f.months, tot = (k: keyof ConstructionMonth) => sum(m.map((x) => x[k] as number))
+    r = { months: m, uses: u, tpc: tot('tpc'), fundsRequired: m[m.length - 1].required, equity: f.E,
+      upfrontEquity: f.upfront, debt: f.D, shareCapital: tot('equityShareCapital'), usl: tot('equityUsl'),
+      idc: tot('idc'), postCodInterest: tot('postCodInterest'), psbgRelease: psbg, converged, iterations }
+    const nextG66 = r.fundsRequired, nextPsbg = psbgReleaseDate(i, g, m)
+    // The interest DSR is ~ proportional to the debt, and `r` was built at this pass's D, one step behind nextG66;
+    // scaling by the debt ratio removes that lag (18 → 12 passes at the sample). The ratio is 1 at the fixed point.
+    const nextDsr = dsrOf ? dsrOf(r) * (f.D > 0 ? nextG66 * (1 - i.capital.equityPct) / f.D : 1) : dsr
     converged = Math.abs(nextG66 - g66) < OUTER_TOL && Math.abs(nextPsbg - psbg) < OUTER_TOL
-    g66 = nextG66; psbg = nextPsbg
+      && Math.abs(nextDsr - dsr) < OUTER_TOL
+    g66 = nextG66; psbg = nextPsbg; dsr = nextDsr
   } while (!converged && iterations < maxIterations && Number.isFinite(g66))
-  const m = f.months, tot = (k: keyof ConstructionMonth) => sum(m.map((x) => x[k] as number))
-  return { months: m, uses: u, tpc: tot('tpc'), fundsRequired: m[m.length - 1].required, equity: f.E,
-    upfrontEquity: f.upfront, debt: f.D, shareCapital: tot('equityShareCapital'), usl: tot('equityUsl'),
-    idc: tot('idc'), postCodInterest: tot('postCodInterest'), psbgRelease: psbg, converged, iterations }
+  return { ...r, converged, iterations }
 }

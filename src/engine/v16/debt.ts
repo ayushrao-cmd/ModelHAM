@@ -64,16 +64,17 @@ export function runDebt(i: Inputs, g: Grid, c: ConstructionResult): DebtResult {
   // ponytail: r31 additions (COP-MOF draws in a period *starting* on the month start) are 0 unless the 1st annuity is
   // the 1st of a month (a 0-day post-COD period); not modelled.
   let open = months.length ? months[months.length - 1].closing : c.months[c.months.length - 1].debtBalance // D30 = C17
+  const dbEnd = db.map(eomonth), dbHalf = db.map(halfYearEnd) // DB r61, r62 (hoisted: the month loop is hot)
   // Bounded: s strictly increases (end ≥ s) and the loop stops once past U12.
   for (let s = g.firstAnnuity, end = s; last > 0 && s <= repaymentEnd; s = end + 1) {
     end = Math.min(eomonth(s), repaymentEnd)
-    const fy = fyEnd(end)
+    const fy = fyEnd(end), monthEnd = eomonth(end)
     // r32: instalments whose annuity month end (DB r61) is this month's end.
-    const repayment = db.reduce((a, d, n) => a + (eomonth(d) === eomonth(end) ? principal[n] ?? 0 : 0), 0)
+    const repayment = dbEnd.reduce((a, d, n) => a + (d === monthEnd ? principal[n] ?? 0 : 0), 0)
     // r27 + r28: the CP rate only where a COP-MOF period ends on this month's end (a 1-day first month when K12 is a
     // month end); after K12 SUMIF(DB r62 half-year end, FY end, DB r64 = '1. IO'!H16 + DB!J9 sensitivity 0).
     const rate = (end === g.firstAnnuity ? i.capital.buildRate : 0)
-      + (end > g.firstAnnuity ? i.capital.operateRate * db.filter((d) => halfYearEnd(d) === fy).length : 0)
+      + (end > g.firstAnnuity ? i.capital.operateRate * dbHalf.filter((d) => d === fy).length : 0)
     const closing = open - repayment, days = end - s + 1
     // V16 quirk B-Q15: a repayment month charges AVERAGE(pre, post repayment) over the whole month.
     months.push({ phase: 'repayment', start: s, end, days, rate, opening: open, addition: 0, repayment, closing,

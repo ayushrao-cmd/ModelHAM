@@ -152,11 +152,10 @@ export function runFunds(i: Inputs, g: Grid, c: ConstructionResult, rev: Revenue
   // V16 quirk B-Q3: H331's first branch SUMIFS on 'Fin-IGAAP' r213 = K12 + 1 never matches (r213 holds the COD and
   // 1-April FY starts), so it is the FY after FY(K16): its interest / its months (12) × D56, i.e. ½ × FY32's interest
   // at the sample, not the 6 months after the 1st annuity. 0 when that FY is past the debt grid (V16: #DIV/0!).
-  const kI16 = at.get(fyEnd(g.constructionEnd)), k16i = at.get(k16)
+  const kI16 = at.get(fyEnd(g.constructionEnd))
   const codInterest = perFy(), codPrincipal = perFy()
   if (kI16 !== undefined) {
-    if (k16i !== undefined && k16i + 1 < n && g.fys[k16i + 1] <= u14)
-      codInterest[kI16] = debt.interest[k16i + 1] / MONTHS * i.funds.dsrInterestMonths
+    codInterest[kI16] = codInterestDsr(i, g, debt)
     // r347 = Σ DB r67 of annuities ≤ D57.
     codPrincipal[kI16] = debt.principal.slice(0, i.funds.dsrPrincipalInstalments).reduce((s, v) => s + v, 0)
   }
@@ -192,6 +191,14 @@ export function runFunds(i: Inputs, g: Grid, c: ConstructionResult, rev: Revenue
     dsrInterestRequired, annuitiesInFy, fundsAvailable, dsrInterest, dsrPrincipal, dsrInterestCarried,
     dsrInterestShortfall: dsrInterestCarried.map((v) => Math.min(v, 0)), dsrPrincipalCarried,
     dsrPrincipalShortfall: dsrPrincipalCarried.map((v) => Math.min(v, 0)), interestOnFunds }
+}
+
+/** Fin-IGAAP H331 (= D331, COP-MOF r42): the interest DSR funded at COD, see the B-Q3 note in `runFunds`. It needs only
+ *  the debt, so construction solves it in its outer loop (`model.ts`). */
+export function codInterestDsr(i: Inputs, g: Grid, debt: DebtResult): number {
+  const k = g.fys.indexOf(fyEnd(g.firstAnnuity)) + 1
+  return k > 0 && k < g.fys.length && g.fys[k] <= fyEnd(debt.repaymentEnd)
+    ? debt.interest[k] / MONTHS * i.funds.dsrInterestMonths : 0
 }
 
 function blank(n: number): Ledger {
