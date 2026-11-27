@@ -1,6 +1,5 @@
 import { fyEnd } from '../dates'
 import type { Inputs } from '../types'
-import type { ConstructionResult } from './construction'
 import { YEAR, daysInFy } from './grid'
 import { inflationIndex } from './indices'
 import type { Grid } from './types'
@@ -29,7 +28,9 @@ export interface OpexResult extends Record<OpexHead, number[]> {
  * charges (DB!E43 = E42 × D43, E42 a hard-coded 0, so 0). GST: DB!C40:H40 / O&M Cost H30:H32, hard-coded 0 on
  * manpower, IMV running and electricity, GSTFLC (= GSTOthers) on the rest. Insurance tag "No Inflation".
  */
-export function runOpex(i: Inputs, g: Grid, c: ConstructionResult): OpexResult {
+/** `epcVariable` = DB!D30, EPC variable net of GST = Σ PIM on the grant (`grantSchedule(i, g).pim`), which needs no
+ *  funding loop; it only sets the insurance base. */
+export function runOpex(i: Inputs, g: Grid, epcVariable: number): OpexResult {
   const o = i.operations, inf = o.inflation, gs = i.build.gstServices
   const at = new Map(g.fys.map((f, k) => [f, k]))
   const perFy = () => g.fys.map(() => 0)
@@ -53,7 +54,7 @@ export function runOpex(i: Inputs, g: Grid, c: ConstructionResult): OpexResult {
   const flcFactor = g.fys.map((f, k) => (f < u14 ? g.opFactorCod[k] : f === u14 ? u13 : 0))
 
   // DB!G43 = 'Fin Set'!L14 (J14 × (1 − K14) = 0.0014 × 2.15) × DB!E30 (EPC fixed + EPC variable net = Σ PIM on grant).
-  const insurance = o.insuranceBaseRate * o.insuranceLoading * (i.build.epcFixed + c.uses.grant.pim.reduce((s, v) => s + v, 0))
+  const insurance = o.insuranceBaseRate * o.insuranceLoading * (i.build.epcFixed + epcVariable)
   const constant = (v: number) => g.opFactorCod.map((f) => v * f) // rows 34–38: DB row 43 × J12
 
   // ponytail: V16's '1. IO' row 11 holds RM per concession year and S13/T13 one MM amount per cycle; the site has one
@@ -87,7 +88,8 @@ export function runOpex(i: Inputs, g: Grid, c: ConstructionResult): OpexResult {
   // exactly the first-payment lag (A-Q2), so r302 = r13.
   // V16 quirk B-Q9: funded through COP incl. GST, while the expense fund ledger later uses ex-GST costs.
   const daily = g.fys.map((_, k) => (g.opFactorCod[k] ? (total[k] + gstTotal[k]) / (g.opFactorCod[k] * YEAR) : 0))
-  const postCodOpex = g.periods.map((p) => (p.kind === 'postCod' ? (daily[at.get(p.fy) ?? -1] ?? 0) * p.days : 0))
+  // g.fys runs FY(appointed)..FY(concession end), so every post-COD period's FY is on the grid.
+  const postCodOpex = g.periods.map((p) => (p.kind === 'postCod' ? daily[at.get(p.fy)!] * p.days : 0))
 
   return { ...heads, total, gst, gstTotal, daily, postCodOpex }
 }

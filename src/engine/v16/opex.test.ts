@@ -1,14 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { row, inputsFor, expectSeries, expectClose, opsFor } from './golden'
-import { buildGrid } from './grid'
-import { runConstruction } from './construction'
+import { fyEnd } from '../dates'
+import { row, inputsFor, expectSeries, expectClose } from './golden'
+import { buildGrid, daysInFy } from './grid'
+import { grantSchedule } from './construction'
+import { inflationIndex } from './indices'
 import { runOpex, type OpexHead } from './opex'
 
+const sum = (a: number[]) => a.reduce((s, v) => s + v, 0)
 const setup = (set: string) => {
   const i = inputsFor(set), g = buildGrid(i)
-  return { i, g, c: runConstruction(i, g, opsFor(set)) }
+  return { i, g, ev: sum(grantSchedule(i, g).pim) } // DB!D30 EPC variable net, no funding loop needed
 }
-const sum = (a: number[]) => a.reduce((s, v) => s + v, 0)
 const neg = (a: number[]) => a.map((v) => -v)
 /** Fin-IGAAP P&L rows (negative there; positive here). */
 const HEAD_ROWS: [OpexHead, number][] = [['ieFee', 15], ['spvManpower', 16], ['spvOverhead', 17], ['financeLegal', 18],
@@ -16,8 +18,8 @@ const HEAD_ROWS: [OpexHead, number][] = [['ieFee', 15], ['spvManpower', 16], ['s
 
 for (const set of ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rates50bp', 'equated']) {
   describe(`v16 opex: ${set}`, () => {
-    const { i, g, c } = setup(set)
-    const o = runOpex(i, g, c)
+    const { i, g, ev } = setup(set)
+    const o = runOpex(i, g, ev)
 
     it('each head = Fin-IGAAP rows 15–22 by FY and in total; total = D25', () => {
       for (const [h, r] of HEAD_ROWS) {
@@ -46,25 +48,37 @@ for (const set of ['sample', 'bid2400', 'epc105', 'build1460', 'equity30', 'rate
 }
 
 describe('v16 opex: sample', () => {
-  const { i, g, c } = setup('sample')
-  const o = runOpex(i, g, c)
+  const { i, g, ev } = setup('sample')
+  const o = runOpex(i, g, ev)
+  const idx = inflationIndex(i, g, i.operations.inflation.maintenance)
+  const at = (d: number) => g.fys.indexOf(fyEnd(d))
 
   it('total −386.37770064097117; post-COD O&M 8.794704003393369', () => {
     expectClose(-sum(o.total), -386.37770064097117, 1e-5, 'D25')
     expectClose(sum(o.postCodOpex), 8.794704003393369, 1e-6, 'G38')
   })
 
-  it('FLC stops after the repayment-end FY (FY43 × 0.457534, then 0)', () => {
-    const k43 = g.fys.findIndex((f) => new Date(f * 86_400_000).getUTCFullYear() === 2043)
-    expectClose(o.financeLegal[k43] / o.financeLegal[k43 - 1], (1 - 198 / 365) * 1.045, 1e-12, 'FY43/FY42') // DB!U13
-    expect(o.financeLegal.slice(k43 + 1).every((v) => v === 0)).toBe(true)
-  })
+  // DB!U12 = annuity no. (repayment length); before FY(U12) × J12, in it × U13 = 1 − (U14 − U12 + 1)/days, then 0.
+  for (const n of [25, 20]) {
+    it(`FLC stops at the repayment-end FY of a ${n}-instalment schedule`, () => {
+      const ii = { ...i, capital: { ...i.capital, repayment: i.capital.repayment.slice(0, n) } }
+      const end = g.annuities[n - 1], k = at(end), u13 = 1 - (fyEnd(end) - end + 1) / daysInFy(fyEnd(end))
+      const factor = g.fys.map((_, j) => (j < k ? g.opFactorCod[j] : j === k ? u13 : 0))
+      expectSeries(runOpex(ii, g, ev).financeLegal, { values: factor.map((f, j) => i.operations.financeLegal * f * idx[j]) },
+        1e-12, `FLC n=${n}`)
+      expect(k).toBe(at(g.annuities[24]) - (n === 20 ? 3 : 0)) // 20 instalments: 2.5 years earlier → 3 FYs
+    })
+  }
 
-  it('MM follows operations.resurfacingYears', () => {
-    const moved = runOpex({ ...i, operations: { ...i.operations, resurfacingYears: [7, 13] } }, g, c)
-    const k = (y: number) => g.fys.findIndex((f) => new Date(f * 86_400_000).getUTCFullYear() === y)
-    expect(moved.majorMaintenance[k(2036)]).toBeGreaterThan(0) // year 7 starts 19-Mar-36 (FY36 stub)
-    expect(moved.majorMaintenance[k(2037)]).toBeGreaterThan(30)
-    expect(moved.majorMaintenance[k(2035)]).toBe(0)
+  it('MM lands only in operations.resurfacingYears (years 6 and 12 become 0 when moved to 7 and 13)', () => {
+    const moved = runOpex({ ...i, operations: { ...i.operations, resurfacingYears: [7, 13] } }, g, ev)
+    const want = g.fys.map(() => 0)
+    for (const y of [7, 13]) {
+      const c = g.concessionYears[y - 1], mm = i.operations.majorMaintenance
+      want[at(c.start)] += mm * c.share * idx[at(c.start)]
+      want[at(c.end)] += mm * (1 - c.share) * idx[at(c.end)]
+    }
+    expectSeries(moved.majorMaintenance, { values: want }, 1e-12, 'MM [7, 13]')
+    expect(moved.majorMaintenance[at(g.concessionYears[5].start)]).toBe(0) // year 6's start FY
   })
 })
